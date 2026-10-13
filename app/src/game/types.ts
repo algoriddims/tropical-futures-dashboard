@@ -16,7 +16,7 @@ export interface Product {
   name: string;
   drop: string;            // collection / drop name
   price: number;           // retail
-  unitCost: number;        // production cost per unit
+  unitCost: number | null; // production cost per unit; null = not recorded at source
   stock: number;
   startInventory: number;
   sold7d: number;
@@ -77,7 +77,7 @@ export interface DayPoint {
   date: string;
   revenue: number;
   orders: number;
-  spend: number;
+  spend?: number;          // ad spend; absent = ads not connected for this day
   sessions?: number;       // measured storefront sessions; absent = not collected
 }
 
@@ -123,6 +123,8 @@ export interface SnapshotMeta {
   coverageEnd?: string;    // last moment the snapshot's records cover
   extractedAt?: string;    // when the sync pulled the data from its sources
   sources?: { label: string; extractedAt?: string; coverageEnd?: string }[];
+  /** Plain-language data-quality notes from the sync (shown on the overview). */
+  notes?: string[];
 }
 
 export interface ParkData {

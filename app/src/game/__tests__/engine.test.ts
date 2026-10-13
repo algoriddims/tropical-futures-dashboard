@@ -144,3 +144,20 @@ describe('plain business language', () => {
     }
   });
 });
+
+describe('low-volume honesty (found on real Shopify data)', () => {
+  const base: Product = { id: 'x', name: 'X', drop: 'D', price: 45, unitCost: 15, stock: 4, startInventory: 8, sold7d: 0, soldPrev7d: 0, soldTotal: 4, published: true };
+
+  it('no sales this week is never THRIVING, however good lifetime sell-through looks', () => {
+    expect(rideState(base)).not.toBe('THRIVING');
+  });
+
+  it('one or two units is not a trend', () => {
+    expect(rideState({ ...base, sold7d: 2, soldPrev7d: 0 })).not.toBe('THRIVING');
+    expect(rideState({ ...base, sold7d: 4, soldPrev7d: 1 })).toBe('THRIVING');
+  });
+
+  it('nothing sold and nothing in stock gives 0, not NaN', () => {
+    expect(sellThrough({ ...base, stock: 0, soldTotal: 0 })).toBe(0);
+  });
+});

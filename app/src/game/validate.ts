@@ -19,7 +19,7 @@ const product = z.looseObject({
   name: text,
   drop: text,
   price: nonNeg,
-  unitCost: nonNeg,
+  unitCost: nonNeg.nullable(),
   stock: count,
   startInventory: count,
   sold7d: count,
@@ -64,7 +64,7 @@ const campaign = z.looseObject({
   dailySpend: z.array(nonNeg),
 });
 
-const day = z.looseObject({ date: text.min(1), revenue: num, orders: count, spend: nonNeg, sessions: count.optional() });
+const day = z.looseObject({ date: text.min(1), revenue: num, orders: count, spend: nonNeg.optional(), sessions: count.optional() });
 
 const quest = z.looseObject({
   id: text, scenario: text, goal: text, unit: text,
@@ -87,6 +87,7 @@ const meta = z.looseObject({
   coverageEnd: isoDate.optional(),
   extractedAt: isoDate.optional(),
   sources: z.array(z.looseObject({ label: text, extractedAt: isoDate.optional(), coverageEnd: isoDate.optional() })).optional(),
+  notes: z.array(text).optional(),
 });
 
 export const parkDataSchema = z.looseObject({

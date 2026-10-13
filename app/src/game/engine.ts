@@ -18,9 +18,12 @@ export interface Metrics {
   revenue: number;
   orders: number;
   aov: number;
-  spend: number;
-  roas: number;
-  mer: number;
+  /** Ad spend over the window; null unless every day in it carries spend (ads connected). */
+  spend: number | null;
+  /** Campaign-attributed ROAS; null without campaign spend. */
+  roas: number | null;
+  /** All revenue ÷ all ad spend; null without spend. */
+  mer: number | null;
   breakEvenRoas: number;
   /** Measured sessions over the window; null unless every day in it carries sessions. */
   guests: number | null;
@@ -32,7 +35,10 @@ export interface Metrics {
   /** % change vs the previous equal-length window; null without a full, non-zero previous window. */
   revenueDeltaPct: number | null;
   inventoryUnits: number;
+  /** Stock at cost, over products whose unit cost is known. */
   inventoryCost: number;
+  /** Units in stock with no recorded unit cost (left out of inventoryCost). */
+  inventoryUnitsWithoutCost: number;
   inventoryRetail: number;
   overallSellThrough: number;
   pipelineUnits: number;
@@ -41,9 +47,20 @@ export interface Metrics {
   pipelineNet: number;
 }
 
+// 0..1. Nothing sold and nothing in stock has no meaningful sell-through;
+// it's 0 for ranking and shown as "—" (see hasSellThrough).
 export function sellThrough(p: Product): number {
-  return p.soldTotal / (p.soldTotal + p.stock);
+  const den = p.soldTotal + p.stock;
+  return den > 0 ? p.soldTotal / den : 0;
 }
+
+export function hasSellThrough(p: Product): boolean {
+  return p.soldTotal + p.stock > 0;
+}
+
+// A week needs a few sales before "rising" means anything: at 0–2 units a
+// single order looks like a trend.
+export const MIN_UNITS_FOR_TREND = 3;
 
 export function dailyVelocity(p: Product): number {
   return p.sold7d / 7;
@@ -61,7 +78,7 @@ export function rideState(p: Product): RideState {
   if (p.stock === 0) return 'SOLD OUT';
   const v = dailyVelocity(p);
   const prev = p.soldPrev7d / 7;
-  if (v >= prev * 1.25 && sellThrough(p) > 0.25) return 'THRIVING';
+  if (p.sold7d >= MIN_UNITS_FOR_TREND && v >= prev * 1.25 && sellThrough(p) > 0.25) return 'THRIVING';
   if (v < 0.5) return 'QUIET';
   return 'NORMAL';
 }
@@ -178,7 +195,7 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
   const prev = d.days.slice(-rangeDays * 2, -rangeDays);
   const revenue = days.reduce((s, x) => s + x.revenue, 0);
   const orders = days.reduce((s, x) => s + x.orders, 0);
-  const spend = days.reduce((s, x) => s + x.spend, 0);
+  const spend = measuredSpend(days);
   // No substitute baseline: comparing against an empty or partial window
   // (or $0) produces numbers like +9900% that mean nothing.
   const prevRevenue = prev.length === rangeDays ? prev.reduce((s, x) => s + x.revenue, 0) : 0;
@@ -186,14 +203,15 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
 
   const attrRevenue = d.campaigns.reduce((s, c) => s + c.revenue, 0);
   const campSpend = d.campaigns.reduce((s, c) => s + c.spend, 0);
-  const roas = campSpend > 0 ? attrRevenue / campSpend : 0;
-  const mer = spend > 0 ? revenue / spend : 0;
+  const roas = campSpend > 0 ? attrRevenue / campSpend : null;
+  const mer = spend !== null && spend > 0 ? revenue / spend : null;
   const breakEvenRoas = 1 / d.grossMargin;
 
   const guests = measuredSessions(days);
 
   const inventoryUnits = d.products.reduce((s, p) => s + p.stock, 0);
-  const inventoryCost = d.products.reduce((s, p) => s + p.stock * p.unitCost, 0);
+  const inventoryCost = d.products.reduce((s, p) => s + (p.unitCost !== null ? p.stock * p.unitCost : 0), 0);
+  const inventoryUnitsWithoutCost = d.products.reduce((s, p) => s + (p.unitCost === null ? p.stock : 0), 0);
   const inventoryRetail = d.products.reduce((s, p) => s + p.stock * p.price, 0);
   const totalSold = d.products.reduce((s, p) => s + p.soldTotal, 0);
   const overallSellThrough = totalSold / (totalSold + inventoryUnits || 1);
@@ -211,12 +229,24 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
     ratingBand: bandFor(rating),
     ratingParts,
     revenueDeltaPct,
-    inventoryUnits, inventoryCost, inventoryRetail, overallSellThrough,
+    inventoryUnits, inventoryCost, inventoryUnitsWithoutCost, inventoryRetail, overallSellThrough,
     pipelineUnits: d.pipeline.reduce((s, i) => s + i.qty, 0),
     pipelineCost: d.pipeline.reduce((s, i) => s + pipelineCost(i), 0),
     pipelineGross: d.pipeline.reduce((s, i) => s + pipelineGross(i), 0),
     pipelineNet: d.pipeline.reduce((s, i) => s + pipelineNet(i), 0),
   };
+}
+
+// Ad spend only counts when every day in the window carries it; a day
+// without spend means ads weren't connected, not that nothing was spent.
+export function measuredSpend(days: DayPoint[]): number | null {
+  if (days.length === 0) return null;
+  let total = 0;
+  for (const x of days) {
+    if (typeof x.spend !== 'number') return null;
+    total += x.spend;
+  }
+  return total;
 }
 
 // Sessions only count when measured for every day of the window — a partial
@@ -251,7 +281,7 @@ function bandFor(r: number): string {
 // Business score, 0–1000. Each component scores 0..100, weights sum to 10.
 function buildRating(
   d: ParkData,
-  ctx: { revenue: number; prevRevenue: number; roas: number; breakEvenRoas: number },
+  ctx: { revenue: number; prevRevenue: number; roas: number | null; breakEvenRoas: number },
 ): RatingPart[] {
   const momentum = ctx.prevRevenue > 0 ? clamp(((ctx.revenue / ctx.prevRevenue) - 0.7) / 0.6, 0, 1) * 100 : null;
 
@@ -260,7 +290,9 @@ function buildRating(
   const healthy = live.filter((p) => p.stock > 0 && dailyVelocity(p) > 0.3);
   const rideHealth = live.length ? (healthy.length / live.length) * 100 : 0;
 
-  const marketing = clamp((ctx.roas - ctx.breakEvenRoas * 0.6) / (d.targetRoas - ctx.breakEvenRoas * 0.6), 0, 1) * 100;
+  const marketing = ctx.roas !== null
+    ? clamp((ctx.roas - ctx.breakEvenRoas * 0.6) / (d.targetRoas - ctx.breakEvenRoas * 0.6), 0, 1) * 100
+    : null;
 
   const happiness = d.refundRate !== undefined && d.repeatRate !== undefined
     ? clamp((1 - d.refundRate * 8) * 0.6 + d.repeatRate * 1.1 * 0.4, 0, 1) * 100
@@ -278,7 +310,7 @@ function buildRating(
   return [
     { label: 'SALES MOMENTUM', score: momentum, weight: 2.5, note: momentum === null ? 'no comparable previous period — left out' : 'revenue vs trailing baseline' },
     { label: 'PRODUCT HEALTH', score: rideHealth, weight: 2.0, note: 'products in stock + selling' },
-    { label: 'MARKETING EFFICIENCY', score: marketing, weight: 2.0, note: `roas vs break-even ${ctx.breakEvenRoas.toFixed(2)}` },
+    { label: 'MARKETING EFFICIENCY', score: marketing, weight: 2.0, note: marketing === null ? 'no campaign data — left out' : `roas vs break-even ${ctx.breakEvenRoas.toFixed(2)}` },
     { label: 'REFUNDS & REPEAT BUYERS', score: happiness, weight: 1.5, note: happiness === null ? 'refund/repeat rates not in data — left out' : 'refunds ↓ · repeat customers ↑' },
     { label: 'GOAL PROGRESS', score: questPace, weight: 1.0, note: 'progress on active goals' },
     { label: 'INVENTORY DISCIPLINE', score: discipline, weight: 1.0, note: 'dead stock ↓ · stockouts ↓' },
@@ -555,7 +587,8 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
 export interface SyncDelta {
   revenue: number;
   orders: number;
-  spend: number;
+  /** null when the new days carry no ad spend (ads not connected) */
+  spend: number | null;
   events: string[];
 }
 
@@ -576,7 +609,7 @@ export function diffSnapshots(prev: ParkData, next: ParkData): SyncDelta {
   return {
     revenue: fresh.reduce((s, x) => s + x.revenue, 0),
     orders: fresh.reduce((s, x) => s + x.orders, 0),
-    spend: fresh.reduce((s, x) => s + x.spend, 0),
+    spend: measuredSpend(fresh),
     events,
   };
 }

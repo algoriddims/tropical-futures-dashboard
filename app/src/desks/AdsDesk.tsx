@@ -10,7 +10,8 @@ export default function AdsDesk() {
       <div className="grid grid-cols-4 gap-2">
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">SPEND</div>
-          <div className="font-display text-3xl tier-red">${metrics.spend.toLocaleString()}</div>
+          <div className={`font-display text-3xl ${metrics.spend !== null ? 'tier-red' : 'dim'}`}>{metrics.spend !== null ? `$${metrics.spend.toLocaleString()}` : '—'}</div>
+          {metrics.spend === null && <div className="text-[0.72rem] dim">META ADS NOT CONNECTED</div>}
         </div>
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">ATTRIBUTED REVENUE</div>
@@ -20,14 +21,14 @@ export default function AdsDesk() {
         </div>
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">BLENDED ROAS</div>
-          <div className={`font-display text-3xl ${metrics.roas >= data.targetRoas ? 'phosphor' : metrics.roas < metrics.breakEvenRoas ? 'tier-red' : 'tier-amber'}`}>
-            {metrics.roas.toFixed(2)}
+          <div className={`font-display text-3xl ${metrics.roas === null ? 'dim' : metrics.roas >= data.targetRoas ? 'phosphor' : metrics.roas < metrics.breakEvenRoas ? 'tier-red' : 'tier-amber'}`}>
+            {metrics.roas !== null ? metrics.roas.toFixed(2) : '—'}
           </div>
           <div className="text-[0.72rem] dim">TARGET {data.targetRoas.toFixed(1)} · BREAK-EVEN {metrics.breakEvenRoas.toFixed(2)}</div>
         </div>
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">MER · TRUE EFFICIENCY</div>
-          <div className="font-display text-3xl phosphor">{metrics.mer.toFixed(2)}</div>
+          <div className={`font-display text-3xl ${metrics.mer !== null ? 'phosphor' : 'dim'}`}>{metrics.mer !== null ? metrics.mer.toFixed(2) : '—'}</div>
           <div className="text-[0.72rem] dim">ALL REVENUE ÷ ALL SPEND</div>
         </div>
       </div>

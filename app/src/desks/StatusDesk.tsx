@@ -93,13 +93,19 @@ export default function StatusDesk() {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-display text-sm">
                 <span className="phosphor">+${Math.round(delta.revenue).toLocaleString()} REVENUE</span>
                 <span className="water">+{delta.orders} ORDERS</span>
-                <span className="tier-red">-${Math.round(delta.spend).toLocaleString()} AD SPEND</span>
+                {delta.spend !== null && <span className="tier-red">-${Math.round(delta.spend).toLocaleString()} AD SPEND</span>}
                 {delta.events.map((e, i) => (
                   <span key={i} className="badge tier-amber">{e}</span>
                 ))}
               </div>
             ) : (
               <div className="font-display text-sm dim">FIRST SYNC — BASELINE SET. DELTAS APPEAR ON THE NEXT IMPORT.</div>
+            )}
+            {data.meta?.notes && data.meta.notes.length > 0 && (
+              <div className="mt-2 space-y-0.5 border-t border-[var(--crt-mid)] pt-2 text-[0.74rem]">
+                <div className="font-display text-xs dim">DATA NOTES FROM THIS SYNC</div>
+                {data.meta.notes.map((n, i) => <div key={i} className="warm">· {n}</div>)}
+              </div>
             )}
           </div>
         </div>
@@ -167,12 +173,17 @@ export default function StatusDesk() {
 
         <Window title="ADS" right={<button onClick={(e) => { e.stopPropagation(); setDesk('a'); }} className="keycap">A</button>}>
           <div className="flex items-end justify-between">
-            <BigStat label="META SPEND" value={`$${metrics.spend.toLocaleString()}`} tone="tier-red" />
+            <BigStat
+              label="META SPEND"
+              value={metrics.spend !== null ? `$${metrics.spend.toLocaleString()}` : '—'}
+              tone={metrics.spend !== null ? 'tier-red' : 'dim'}
+              sub={metrics.spend === null ? 'META ADS NOT CONNECTED' : undefined}
+            />
             <div className="text-right">
-              <div className={`font-display text-xl ${metrics.roas >= data.targetRoas ? 'phosphor' : 'tier-amber'}`}>
-                {metrics.roas.toFixed(2)} ROAS
+              <div className={`font-display text-xl ${metrics.roas === null ? 'dim' : metrics.roas >= data.targetRoas ? 'phosphor' : 'tier-amber'}`}>
+                {metrics.roas !== null ? metrics.roas.toFixed(2) : '—'} ROAS
               </div>
-              <div className="text-[0.72rem] dim">MER {metrics.mer.toFixed(2)} · BE {metrics.breakEvenRoas.toFixed(2)}</div>
+              <div className="text-[0.72rem] dim">MER {metrics.mer !== null ? metrics.mer.toFixed(2) : '—'} · BE {metrics.breakEvenRoas.toFixed(2)}</div>
             </div>
           </div>
         </Window>
@@ -184,7 +195,12 @@ export default function StatusDesk() {
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="UNITS IN STOCK" value={metrics.inventoryUnits.toLocaleString()} />
             <BigStat label="SELL-THROUGH" value={`${Math.round(metrics.overallSellThrough * 100)}%`} tone="palm" />
-            <BigStat label="VALUE @ COST" value={`$${metrics.inventoryCost.toLocaleString()}`} tone="dim" />
+            <BigStat
+              label="VALUE @ COST"
+              value={`$${Math.round(metrics.inventoryCost).toLocaleString()}`}
+              tone="dim"
+              sub={metrics.inventoryUnitsWithoutCost > 0 ? `EXCL. ${metrics.inventoryUnitsWithoutCost} UNITS WITHOUT COST` : undefined}
+            />
             <BigStat label="VALUE @ RETAIL" value={`$${metrics.inventoryRetail.toLocaleString()}`} tone="water" />
           </div>
           <div className="mt-2">
