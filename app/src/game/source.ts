@@ -14,18 +14,15 @@
 import type { ParkData } from './types';
 import { fixtureData } from './fixtures';
 
+// Freshness is not a property of the source object: it comes from the
+// snapshot's own dates (ParkData.meta) — see freshness.ts.
 export interface DataSource {
   readonly name: string;
-  readonly freshness: { label: string; minutesAgo: number }[];
   load(): Promise<ParkData>;
 }
 
 export class FixtureSource implements DataSource {
   readonly name = 'SAMPLE DATA';
-  readonly freshness = [
-    { label: 'SHOPIFY', minutesAgo: 2 },
-    { label: 'META', minutesAgo: 4 },
-  ];
   async load(): Promise<ParkData> {
     return fixtureData;
   }

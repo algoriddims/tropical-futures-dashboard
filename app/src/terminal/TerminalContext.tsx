@@ -4,7 +4,12 @@ import type { ParkData, Notice } from '@/game/types';
 import type { Metrics } from '@/game/engine';
 import { computeMetrics, buildNotices } from '@/game/engine';
 import { FixtureSource } from '@/game/source';
-import { applyManual, loadManual, persistManual, loadImported, loadPreviousSync, persistImported, clearImported, isParkData } from '@/game/overrides';
+import {
+  applyManual, applyShelfEdits, clearImported, discardShelfEdit, exportBackup, extractManual, loadImported,
+  loadManual, loadPreviousSync, persistImported, rebaseShelfEdit, recordShelfEdit, saveManual,
+} from '@/game/overrides';
+import type { ManualSlices, ShelfEditStatus, ShelfField } from '@/game/overrides';
+import { validateParkData } from '@/game/validate';
 import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
 
@@ -38,22 +43,32 @@ interface TerminalState {
   setRange: (r: number) => void;
   helpOpen: boolean;
   setHelpOpen: (b: boolean) => void;
-  liveCash: number;
+  /** Simulated order stream — sample mode only, never added to bank cash. */
   liveEvents: LiveEvent[];
   sourceName: string;
-  freshness: { label: string; minutesAgo: number }[];
-  /** Mutate ParkData; manual slices (bank, costs, stockist stock) persist to localStorage. */
+  /** Mutate the manual slices of ParkData (bank, costs, planning inputs); persisted to localStorage. */
   updateData: (mut: (d: ParkData) => ParkData) => void;
+  /** Record a hand correction to a stockist shelf count; persisted, and checked against later imports. */
+  editShelf: (channel: string, productId: string, field: ShelfField, value: number) => void;
+  /** Resolve a shelf edit: 'sync' drops it, 'mine' keeps it re-based on the current sync value. */
+  resolveShelfEdit: (key: string, keep: 'sync' | 'mine') => void;
+  shelfStatus: ShelfEditStatus[];
+  /** False when the last write to localStorage failed — edits then last only this session. */
+  storageOk: boolean;
   /** True when rendering an imported sync snapshot rather than fixture data. */
   imported: boolean;
   /** ISO timestamp of the current imported snapshot (null on fixture data). */
   importedAt: string | null;
+  /** Validation errors when the stored snapshot could not be loaded (sample data shown instead). */
+  storedSnapshotErrors: string[] | null;
   /** Delta vs the previous sync (null on first import / fixture data). */
   delta: SyncDelta | null;
-  /** Paste a full park-data.json; returns an error message or null on success. */
-  importData: (raw: string) => string | null;
-  /** Drop the imported snapshot and return to the live source. */
+  /** Paste a full park-data.json; returns error lines, or null on success. */
+  importData: (raw: string) => string[] | null;
+  /** Drop the imported snapshot and return to sample data. */
   clearImport: () => void;
+  /** JSON of everything stored in this browser, for backup before clearing/re-importing. */
+  exportStored: () => string;
 }
 
 const Ctx = createContext<TerminalState | null>(null);
@@ -70,57 +85,86 @@ const LIVE_ITEMS = [
 ];
 
 export function TerminalProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<ParkData | null>(null);
+  // base = what the source/import says; manual = what the user entered.
+  // The data every desk sees is always derived: base + manual + shelf edits.
+  const [base, setBase] = useState<ParkData | null>(null);
+  const [manual, setManual] = useState<Partial<ManualSlices>>(() => loadManual());
+  const [storageOk, setStorageOk] = useState(true);
   const [desk, setDesk] = useState<DeskKey>('s');
   const [range, setRange] = useState(7);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [liveCash, setLiveCash] = useState(0);
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [imported, setImported] = useState(false);
   const [importedAt, setImportedAt] = useState<string | null>(null);
+  const [storedSnapshotErrors, setStoredSnapshotErrors] = useState<string[] | null>(null);
   const [delta, setDelta] = useState<SyncDelta | null>(null);
   const idRef = useRef(0);
 
   useEffect(() => {
-    source.load().then((base) => {
+    source.load().then((sample) => {
       const imp = loadImported();
-      setImported(imp !== null);
-      setImportedAt(imp?.savedAt ?? null);
-      if (imp) {
+      if (imp?.status === 'ok') {
+        setImported(true);
+        setImportedAt(imp.savedAt || null);
         const prev = loadPreviousSync();
         setDelta(prev ? diffSnapshots(prev, imp.payload) : null);
+        setBase(imp.payload);
+      } else {
+        // An invalid stored snapshot stays in storage (exportable) but is never rendered.
+        setStoredSnapshotErrors(imp?.status === 'invalid' ? imp.errors : null);
+        setBase(sample);
       }
-      setData(applyManual(imp?.payload ?? base, loadManual()));
     });
+  }, []);
+
+  const { data, shelfStatus } = useMemo(() => {
+    if (!base) return { data: null, shelfStatus: [] as ShelfEditStatus[] };
+    const withManual = applyManual(base, manual);
+    const r = applyShelfEdits(withManual, manual.shelfEdits ?? []);
+    return { data: r.data, shelfStatus: r.status };
+  }, [base, manual]);
+
+  const commitManual = useCallback((next: Partial<ManualSlices>) => {
+    setManual(next);
+    setStorageOk(saveManual(next));
   }, []);
 
   const updateData = useCallback((mut: (d: ParkData) => ParkData) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const next = mut(prev);
-      persistManual(next);
-      return next;
-    });
-  }, []);
+    if (!data) return;
+    commitManual({ ...manual, ...extractManual(mut(data)) });
+  }, [data, manual, commitManual]);
 
-  const importData = useCallback((raw: string): string | null => {
+  const editShelf = useCallback((channel: string, productId: string, field: ShelfField, value: number) => {
+    if (!base) return;
+    commitManual({ ...manual, shelfEdits: recordShelfEdit(manual.shelfEdits ?? [], base, { channel, productId, field, value }) });
+  }, [base, manual, commitManual]);
+
+  const resolveShelfEdit = useCallback((key: string, keep: 'sync' | 'mine') => {
+    if (!base) return;
+    const edits = manual.shelfEdits ?? [];
+    commitManual({ ...manual, shelfEdits: keep === 'sync' ? discardShelfEdit(edits, key) : rebaseShelfEdit(edits, base, key) });
+  }, [base, manual, commitManual]);
+
+  const importData = useCallback((raw: string): string[] | null => {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return 'INVALID JSON — PASTE THE FULL park-data.json CONTENTS';
+      return ['INVALID JSON — PASTE THE FULL park-data.json CONTENTS'];
     }
-    if (!isParkData(parsed)) {
-      return 'NOT A VALID PARK-DATA FILE — NEEDS products, pipeline, channels, campaigns, days, orders, grossMargin, targetRoas';
+    const v = validateParkData(parsed);
+    if (!v.ok) return ['NOT IMPORTED — THE CURRENT DATA IS UNCHANGED', ...v.errors];
+    const prev = loadImported();
+    const savedAt = persistImported(v.data);
+    if (savedAt === null) {
+      return ['NOT IMPORTED — BROWSER STORAGE IS FULL OR BLOCKED. EXPORT A BACKUP, THEN CLEAR SPACE.'];
     }
-    const prev = loadImported()?.payload ?? null;
-    const savedAt = persistImported(parsed);
     setImported(true);
     setImportedAt(savedAt);
-    setDelta(prev ? diffSnapshots(prev, parsed) : null);
-    setLiveCash(0);
+    setStoredSnapshotErrors(null);
+    setDelta(prev?.status === 'ok' ? diffSnapshots(prev.payload, v.data) : null);
     setLiveEvents([]);
-    setData(applyManual(parsed, loadManual()));
+    setBase(v.data);
     return null;
   }, []);
 
@@ -128,26 +172,28 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     clearImported();
     setImported(false);
     setImportedAt(null);
+    setStoredSnapshotErrors(null);
     setDelta(null);
-    setLiveCash(0);
     setLiveEvents([]);
-    source.load().then((base) => setData(applyManual(base, loadManual())));
+    source.load().then(setBase);
   }, []);
 
-  // Simulated live order stream — makes the park feel alive on sample data.
-  // Never runs on imported syncs: real snapshots must not accrue fake cash.
+  const exportStored = useCallback(() => exportBackup(), []);
+
+  // Simulated order stream — makes the park feel alive on sample data.
+  // Never runs on imported syncs, and never touches cash.
+  const hasData = data !== null;
   useEffect(() => {
-    if (!data || imported) return;
+    if (!hasData || imported) return;
     let timer: number;
     const tick = () => {
       const item = LIVE_ITEMS[Math.floor(Math.random() * LIVE_ITEMS.length)];
-      setLiveCash((c) => c + item.amount);
       setLiveEvents((ev) => [{ id: idRef.current++, ...item }, ...ev].slice(0, 6));
       timer = window.setTimeout(tick, 6000 + Math.random() * 9000);
     };
     timer = window.setTimeout(tick, 3500);
     return () => window.clearTimeout(timer);
-  }, [data, imported]);
+  }, [hasData, imported]);
 
   const metrics = useMemo(() => (data ? computeMetrics(data, range) : null), [data, range]);
   const notices = useMemo(() => (data && metrics ? buildNotices(data, metrics) : []), [data, metrics]);
@@ -176,9 +222,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const value: TerminalState = {
     data, metrics, notices, desk, setDesk, range, setRange,
-    helpOpen, setHelpOpen, liveCash, liveEvents,
-    sourceName: imported ? 'IMPORTED SYNC' : source.name, freshness: source.freshness,
-    updateData, imported, importedAt, delta, importData, clearImport,
+    helpOpen, setHelpOpen, liveEvents,
+    sourceName: imported ? 'IMPORTED SYNC' : source.name,
+    updateData, editShelf, resolveShelfEdit, shelfStatus, storageOk,
+    imported, importedAt, storedSnapshotErrors, delta, importData, clearImport, exportStored,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

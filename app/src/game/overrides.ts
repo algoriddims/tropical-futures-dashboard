@@ -1,12 +1,38 @@
-// ── Manual data slices ────────────────────────────────────────────────────
-// These parts of ParkData have no API source — no service can sync your bank
-// balance, your cost lines, or your planning inputs. They are entered by hand
-// in the terminal and persisted to this browser's localStorage, then merged
-// on top of whatever the source loads. Stockist shelf counts are SYNC-OWNED:
-// the sync agent collects them with the rest of the snapshot, and each import
-// replaces them wholesale.
+// ── Field ownership ───────────────────────────────────────────────────────
+// Who owns each part of ParkData:
+//
+//   MANUAL (terminal)  bankBalance, costs, growthTargetPct, wholesalePct,
+//                      nextDrop, annualBudget — entered by hand, persisted to
+//                      localStorage, re-applied over every import.
+//   SYNC (import)      everything else — products, pipeline, channels, orders,
+//                      campaigns, days, quests, rates, meta. Replaced whole by
+//                      each valid import.
+//   SYNC + OVERRIDE    stockist/pop-up shelf counts (allocated, sold). The
+//                      sync owns them, but a hand correction is recorded as a
+//                      ShelfEdit with the sync value it replaced. A later
+//                      import never silently overwrites an edit: if the sync
+//                      value moved, the edit is flagged as a conflict for the
+//                      user to resolve.
 
 import type { CostItem, ParkData } from './types';
+import { validateParkData } from './validate';
+
+export const FIELD_OWNERSHIP = {
+  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget'],
+  syncWithOverride: ['channels[].stock[].allocated', 'channels[].stock[].sold'],
+} as const;
+
+export type ShelfField = 'allocated' | 'sold';
+
+export interface ShelfEdit {
+  channel: string;
+  productId: string;
+  field: ShelfField;
+  value: number;
+  /** The sync's value when the edit was made (null if the row had no sync value). */
+  base: number | null;
+  editedAt: string; // ISO
+}
 
 export interface ManualSlices {
   bankBalance: number;
@@ -16,6 +42,7 @@ export interface ManualSlices {
   wholesalePct: number;
   nextDrop: { name: string; date: string } | null;
   annualBudget: number;
+  shelfEdits: ShelfEdit[];
 }
 
 const KEY = 'tfi-manual-v1';
@@ -43,8 +70,9 @@ export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData 
   };
 }
 
-export function persistManual(d: ParkData): void {
-  const slices: ManualSlices = {
+/** The manual scalar slices of a ParkData (shelf edits live separately). */
+export function extractManual(d: ParkData): Omit<ManualSlices, 'shelfEdits'> {
+  return {
     bankBalance: d.bankBalance,
     costs: d.costs,
     growthTargetPct: d.growthTargetPct,
@@ -52,71 +80,181 @@ export function persistManual(d: ParkData): void {
     nextDrop: d.nextDrop,
     annualBudget: d.annualBudget,
   };
+}
+
+/** Returns false when storage is full/unavailable (the session still works, nothing persists). */
+export function saveManual(m: Partial<ManualSlices>): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(slices));
+    localStorage.setItem(KEY, JSON.stringify(m));
+    return true;
   } catch {
-    // storage full or unavailable — the session still works, nothing persists
+    return false;
   }
+}
+
+// ── Shelf edits ───────────────────────────────────────────────────────────
+
+export type ShelfEditState = 'applied' | 'matches-sync' | 'conflict' | 'orphaned';
+
+export interface ShelfEditStatus {
+  edit: ShelfEdit;
+  state: ShelfEditState;
+  /** Current sync value for the cell (null when the row is gone from the sync). */
+  syncValue: number | null;
+}
+
+export function shelfKey(e: Pick<ShelfEdit, 'channel' | 'productId' | 'field'>): string {
+  return `${e.channel}\u0000${e.productId}\u0000${e.field}`;
+}
+
+function syncValueOf(base: ParkData, e: Pick<ShelfEdit, 'channel' | 'productId' | 'field'>): number | null {
+  const row = base.channels.find((c) => c.name === e.channel)?.stock.find((s) => s.productId === e.productId);
+  return row ? row[e.field] : null;
+}
+
+/**
+ * Record a hand correction. One active edit per cell: re-editing a cell
+ * replaces its edit. Re-applying the same value is a no-op (returns the same
+ * array), so replaying an edit changes nothing.
+ */
+export function recordShelfEdit(
+  edits: ShelfEdit[],
+  syncBase: ParkData,
+  e: Omit<ShelfEdit, 'base' | 'editedAt'>,
+  now: Date = new Date(),
+): ShelfEdit[] {
+  const key = shelfKey(e);
+  const existing = edits.find((x) => shelfKey(x) === key);
+  if (existing && existing.value === e.value) return edits;
+  const base = syncValueOf(syncBase, e);
+  const rest = edits.filter((x) => shelfKey(x) !== key);
+  // Setting a cell back to exactly what the sync says retires the edit.
+  if (base === e.value) return rest;
+  return [...rest, { ...e, base, editedAt: now.toISOString() }];
+}
+
+/** Drop an edit — the sync's value wins. */
+export function discardShelfEdit(edits: ShelfEdit[], key: string): ShelfEdit[] {
+  return edits.filter((x) => shelfKey(x) !== key);
+}
+
+/** Keep the edit and accept that the sync moved: re-base it on the current sync value. */
+export function rebaseShelfEdit(edits: ShelfEdit[], syncBase: ParkData, key: string): ShelfEdit[] {
+  return edits.map((x) => (shelfKey(x) === key ? { ...x, base: syncValueOf(syncBase, x) } : x));
+}
+
+/**
+ * Overlay shelf edits on sync data. An edit whose base no longer matches the
+ * sync is still applied (the manual count is never silently lost) but is
+ * reported as a conflict so the user can choose.
+ */
+export function applyShelfEdits(base: ParkData, edits: ShelfEdit[]): { data: ParkData; status: ShelfEditStatus[] } {
+  const status: ShelfEditStatus[] = [];
+  const byChannel = new Map<string, ShelfEdit[]>();
+  for (const e of edits) {
+    const syncValue = syncValueOf(base, e);
+    if (syncValue === null) {
+      status.push({ edit: e, state: 'orphaned', syncValue });
+      continue;
+    }
+    const state: ShelfEditState =
+      syncValue === e.value ? 'matches-sync' : syncValue === e.base ? 'applied' : 'conflict';
+    status.push({ edit: e, state, syncValue });
+    byChannel.set(e.channel, [...(byChannel.get(e.channel) ?? []), e]);
+  }
+  if (byChannel.size === 0) return { data: base, status };
+  return {
+    data: {
+      ...base,
+      channels: base.channels.map((c) => {
+        const ce = byChannel.get(c.name);
+        if (!ce) return c;
+        return {
+          ...c,
+          stock: c.stock.map((s) => {
+            const mine = ce.filter((e) => e.productId === s.productId);
+            return mine.length ? mine.reduce((row, e) => ({ ...row, [e.field]: e.value }), s) : s;
+          }),
+        };
+      }),
+    },
+    status,
+  };
 }
 
 // ── Imported sync data ────────────────────────────────────────────────────
 // A full ParkData snapshot produced externally (e.g. the Claude Code sync
 // writing park-data.json) and pasted into the terminal's IMPORT modal.
-// Stored whole; manual slices (bank, costs, planning inputs) are re-applied
-// on top — those always belong to the terminal, not the sync. Each import
-// also archives the previous snapshot so the terminal can brief you on what
+// Stored whole; manual slices are re-applied on top. Each import also
+// archives the previous snapshot so the terminal can brief you on what
 // changed since the last sync.
 
 const DATA_KEY = 'tfi-data-v1';
 const PREV_KEY = 'tfi-data-prev-v1';
 
 interface StoredSync {
-  savedAt: string; // ISO timestamp
+  savedAt: string; // ISO timestamp of the import
   payload: ParkData;
 }
 
-export function isParkData(v: unknown): v is ParkData {
-  const p = v as ParkData | null;
-  return !!p
-    && Array.isArray(p.products) && Array.isArray(p.pipeline)
-    && Array.isArray(p.channels) && Array.isArray(p.campaigns)
-    && Array.isArray(p.days) && Array.isArray(p.orders)
-    && typeof p.grossMargin === 'number' && typeof p.targetRoas === 'number';
-}
+export type LoadedSync =
+  | { status: 'ok'; savedAt: string; payload: ParkData }
+  | { status: 'invalid'; errors: string[] };
 
-function readSync(key: string): StoredSync | null {
+function readSync(key: string): LoadedSync | null {
+  let raw: string | null;
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    // current shape: wrapper with savedAt; legacy shape: bare ParkData
-    if (parsed && typeof parsed === 'object' && 'payload' in parsed) {
-      const s = parsed as StoredSync;
-      return isParkData(s.payload) ? s : null;
-    }
-    return isParkData(parsed) ? { savedAt: '', payload: parsed } : null;
+    raw = localStorage.getItem(key);
   } catch {
     return null;
   }
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: 'invalid', errors: ['stored snapshot is not valid JSON'] };
+  }
+  // current shape: wrapper with savedAt; legacy shape: bare ParkData
+  const wrapped = parsed && typeof parsed === 'object' && 'payload' in parsed;
+  const payload = wrapped ? (parsed as { payload: unknown }).payload : parsed;
+  const savedAt = wrapped ? String((parsed as { savedAt?: unknown }).savedAt ?? '') : '';
+  const v = validateParkData(payload);
+  return v.ok ? { status: 'ok', savedAt, payload: v.data } : { status: 'invalid', errors: v.errors };
 }
 
-export function loadImported(): StoredSync | null {
+/** The stored snapshot, or why it can't be used. Invalid snapshots are left in storage for export. */
+export function loadImported(): LoadedSync | null {
   return readSync(DATA_KEY);
 }
 
 export function loadPreviousSync(): ParkData | null {
-  return readSync(PREV_KEY)?.payload ?? null;
+  const prev = readSync(PREV_KEY);
+  return prev?.status === 'ok' ? prev.payload : null;
 }
 
-export function persistImported(d: ParkData): string {
+/**
+ * Store a validated snapshot. Returns the import timestamp, or null when
+ * storage failed — in which case the previous snapshot is left untouched.
+ */
+export function persistImported(d: ParkData, now: Date = new Date()): string | null {
   try {
+    const existingRaw = localStorage.getItem(DATA_KEY);
     const existing = readSync(DATA_KEY);
-    if (existing) localStorage.setItem(PREV_KEY, JSON.stringify(existing));
-    const savedAt = new Date().toISOString();
+    const savedAt = now.toISOString();
     localStorage.setItem(DATA_KEY, JSON.stringify({ savedAt, payload: d } satisfies StoredSync));
+    // Archive only a snapshot that was itself valid; an invalid one stays
+    // recoverable via export until this point, then is replaced.
+    if (existing?.status === 'ok' && existingRaw) {
+      try {
+        localStorage.setItem(PREV_KEY, existingRaw);
+      } catch {
+        // the delta briefing is a convenience; the new snapshot is saved
+      }
+    }
     return savedAt;
   } catch {
-    return '';
+    return null;
   }
 }
 
@@ -127,4 +265,29 @@ export function clearImported(): void {
   } catch {
     // non-fatal
   }
+}
+
+/**
+ * Everything this browser holds, exactly as stored (including a snapshot
+ * that fails validation), so it can be saved before clearing or re-importing.
+ */
+export function exportBackup(now: Date = new Date()): string {
+  const get = (k: string): unknown => {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw === null) return null;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return raw;
+      }
+    } catch {
+      return null;
+    }
+  };
+  return JSON.stringify(
+    { exportedAt: now.toISOString(), imported: get(DATA_KEY), previous: get(PREV_KEY), manual: get(KEY) },
+    null,
+    2,
+  );
 }

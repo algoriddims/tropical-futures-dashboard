@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DESKS, useTerminal } from './TerminalContext';
 import { ImportModal } from './ImportModal';
 import { daysUntil } from '@/game/engine';
+import { describeFreshness } from '@/game/freshness';
 
 const RANGES = [
   { key: '1', label: 'TODAY', days: 1 },
@@ -67,13 +68,13 @@ export function TopBar() {
           <span className="keycap">?</span>
         </button>
       </div>
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} />
+      {importOpen && <ImportModal onClose={() => setImportOpen(false)} />}
     </header>
   );
 }
 
 export function StatusBar() {
-  const { data, metrics, desk, liveCash, sourceName, freshness, notices, imported, importedAt } = useTerminal();
+  const { data, metrics, desk, sourceName, notices, imported, importedAt } = useTerminal();
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
@@ -81,23 +82,14 @@ export function StatusBar() {
   }, []);
   const deskMeta = DESKS.find((d) => d.key === desk);
   const redCount = notices.filter((n) => n.tier === 'red').length;
-  // Low-volume brand: a 2–3×/week sync rhythm is healthy, so the badge only
-  // goes stale after 72 hours without an import.
-  const syncHours = importedAt ? (now.getTime() - new Date(importedAt).getTime()) / 36e5 : null;
-  const syncStale = syncHours !== null && syncHours >= 72;
-  const fmtAge = (h: number) =>
-    h < 1 ? `${Math.max(1, Math.round(h * 60))}m` : h < 48 ? `${Math.floor(h)}h` : `${Math.floor(h / 24)}d`;
-  const badgeCls = imported ? (syncStale ? 'tier-amber' : 'tier-green') : 'tier-amber';
-  const badgeText = imported
-    ? syncHours === null ? sourceName
-      : syncStale ? `SYNC NEEDED · ${fmtAge(syncHours)}`
-      : `SYNCED ${fmtAge(syncHours)} AGO`
-    : sourceName;
+  const fresh = describeFreshness({ imported, importedAt, meta: data?.meta, now });
+  const badgeCls = fresh.mode === 'sample' ? 'tier-amber' : fresh.stale ? 'tier-amber' : 'tier-green';
+  const badgeText = fresh.mode === 'sample' ? sourceName : fresh.stale ? 'SYNC NEEDED' : 'SYNC CURRENT';
   const dropDays = data?.nextDrop ? daysUntil(data.nextDrop.date) : null;
   return (
     <footer className="flex items-center gap-4 border-t border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1 font-display text-base overflow-hidden whitespace-nowrap">
       <span className="phosphor">
-        PARK CASH ${data ? (data.bankBalance + liveCash).toLocaleString() : '—'}
+        PARK CASH ${data ? data.bankBalance.toLocaleString() : '—'}
       </span>
       <span className="warm">RATING {metrics?.rating ?? '—'} · {metrics?.ratingBand ?? ''}</span>
       {data?.nextDrop && dropDays !== null && dropDays >= 0 && (
@@ -105,13 +97,13 @@ export function StatusBar() {
           {dropDays === 0 ? 'DROP DAY' : `D-${dropDays}`} · {data.nextDrop.name}
         </span>
       )}
-      <span className="dim">GUESTS {metrics?.guests.toLocaleString() ?? '—'}</span>
+      <span className="dim">SESSIONS {metrics?.guests != null ? metrics.guests.toLocaleString() : '—'}</span>
       {redCount > 0 && <span className="tier-red">▲ {redCount} RED</span>}
       <span className="dim">[{deskMeta?.title}]</span>
       <span className="ml-auto flex items-center gap-3">
-        {freshness.map((f) => (
-          <span key={f.label} className={f.minutesAgo > 15 ? 'tier-amber' : 'dim'}>
-            {f.label} {f.minutesAgo}m
+        {fresh.items.map((f) => (
+          <span key={f.label} className={f.tone === 'ok' ? 'dim' : 'tier-amber'}>
+            {f.label} {f.text}
           </span>
         ))}
         <span className={`badge ${badgeCls}`}>{badgeText}</span>

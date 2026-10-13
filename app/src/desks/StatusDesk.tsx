@@ -39,7 +39,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 }
 
 export default function StatusDesk() {
-  const { data, metrics, notices, setDesk, liveCash, updateData, imported, importedAt, delta } = useTerminal();
+  const { data, metrics, notices, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors } = useTerminal();
   if (!data || !metrics) return null;
 
   const redNotices = notices.filter((n) => n.tier !== 'green').slice(0, 3);
@@ -56,12 +56,37 @@ export default function StatusDesk() {
 
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
+      {/* a stored snapshot that failed validation is never rendered — say so */}
+      {storedSnapshotErrors && (
+        <div className="window">
+          <div className="window-head">
+            <span className="wh-title tier-red">STORED SYNC COULD NOT BE LOADED — SHOWING SAMPLE DATA</span>
+          </div>
+          <div className="window-body text-[0.74rem] dim space-y-0.5">
+            {storedSnapshotErrors.map((e, i) => <div key={i}>▲ {e}</div>)}
+            <div className="warm">IT IS STILL IN THIS BROWSER: OPEN IMPORT → EXPORT BACKUP TO RECOVER IT, OR IMPORT A FRESH SYNC.</div>
+          </div>
+        </div>
+      )}
+
+      {!imported && !storedSnapshotErrors && (
+        <div className="window">
+          <div className="window-body font-display text-sm tier-amber">
+            SAMPLE DATA — INVENTED NUMBERS FOR LAYOUT ONLY, NOT TROPICAL FUTURES RESULTS. IMPORT A SYNC TO SEE REAL DATA.
+          </div>
+        </div>
+      )}
+
       {/* sync briefing */}
       {imported && (
         <div className="window">
           <div className="window-head">
             <span className="wh-title">SINCE LAST SYNC</span>
-            <span className="dim text-sm">{importedAt ? new Date(importedAt).toLocaleString() : ''}</span>
+            <span className="dim text-sm">
+              IMPORTED {importedAt ? new Date(importedAt).toLocaleString() : 'UNKNOWN'}
+              {' · '}COVERS {data.meta?.coverageStart ? `${new Date(data.meta.coverageStart).toLocaleDateString()} → ` : ''}
+              {data.meta?.coverageEnd ? new Date(data.meta.coverageEnd).toLocaleString() : 'UNKNOWN PERIOD'}
+            </span>
           </div>
           <div className="window-body">
             {delta ? (
@@ -106,15 +131,15 @@ export default function StatusDesk() {
             <div>
               <InlineNumber
                 className="font-display text-6xl phosphor crt-flicker leading-none"
-                value={data.bankBalance + liveCash}
+                value={data.bankBalance}
                 format={(v) => `$${v.toLocaleString()}`}
                 title="SET BANK BALANCE"
-                onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v - liveCash }))}
+                onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
               />
             </div>
             <div className="text-right text-[0.72rem] dim">
-              <div>+${(metrics.revenue + liveCash).toLocaleString()} IN / PERIOD</div>
-              <div className="tier-red">-${metrics.spend.toLocaleString()} ADS OUT</div>
+              <div>MANUAL ENTRY</div>
+              <div>SALES ≠ CASH RECEIVED</div>
             </div>
           </div>
         </Window>
@@ -123,13 +148,17 @@ export default function StatusDesk() {
           <div className="flex items-end justify-between">
             <BigStat
               label="NET REVENUE"
-              value={`$${(metrics.revenue + liveCash).toLocaleString()}`}
+              value={`$${metrics.revenue.toLocaleString()}`}
               tone="text-[var(--vhs-white)]"
             />
             <div className="text-right">
-              <div className={`font-display text-xl ${metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
-                {metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(metrics.revenueDeltaPct).toFixed(1)}%
-              </div>
+              {metrics.revenueDeltaPct !== null ? (
+                <div className={`font-display text-xl ${metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
+                  {metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(metrics.revenueDeltaPct).toFixed(1)}%
+                </div>
+              ) : (
+                <div className="font-display text-xl dim">—</div>
+              )}
               <div className="text-[0.72rem] dim">VS PREV PERIOD</div>
               <div className="text-[0.72rem] dim mt-1">{metrics.orders} ORDERS · AOV ${metrics.aov.toFixed(0)}</div>
             </div>
@@ -166,10 +195,10 @@ export default function StatusDesk() {
         {/* guests */}
         <Window title="GUESTS">
           <div className="grid grid-cols-2 gap-3">
-            <BigStat label="VISITORS" value={metrics.guests.toLocaleString()} />
-            <BigStat label="CONVERSION" value={`${metrics.conversionRate.toFixed(1)}%`} tone="tropic-pink" />
-            <BigStat label="REGULARS" value={`${Math.round(data.repeatRate * 100)}%`} tone="palm" />
-            <BigStat label="REFUND RATE" value={`${(data.refundRate * 100).toFixed(1)}%`} tone={data.refundRate > 0.05 ? 'tier-red' : 'dim'} />
+            <BigStat label="SESSIONS" value={metrics.guests !== null ? metrics.guests.toLocaleString() : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
+            <BigStat label="CONVERSION" value={metrics.conversionRate !== null ? `${metrics.conversionRate.toFixed(1)}%` : '—'} tone="tropic-pink" sub={metrics.conversionRate === null ? 'NEEDS SESSIONS' : undefined} />
+            <BigStat label="REGULARS" value={data.repeatRate !== undefined ? `${Math.round(data.repeatRate * 100)}%` : '—'} tone="palm" sub={data.repeatRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
+            <BigStat label="REFUND RATE" value={data.refundRate !== undefined ? `${(data.refundRate * 100).toFixed(1)}%` : '—'} tone={data.refundRate !== undefined && data.refundRate > 0.05 ? 'tier-red' : 'dim'} sub={data.refundRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
           </div>
         </Window>
 

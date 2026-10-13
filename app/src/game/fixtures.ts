@@ -1,4 +1,5 @@
 // ── Sample dataset · Tropical Futures Institute ───────────────────────────
+// SAMPLE DATA — invented numbers for layout and demos, not TFI results.
 // Deterministic (seeded) so the board renders the same on every load.
 // Replace via source.ts when wiring Shopify / Meta.
 
@@ -17,7 +18,7 @@ function rng(seed: number) {
 const products: Product[] = [
   { id: 'p1', name: 'KEEP GOING 333 JERSEY',      drop: 'HOPECORE',        price: 88,  unitCost: 24, stock: 34,  startInventory: 220, sold7d: 61, soldPrev7d: 42, soldTotal: 186, published: true },
   { id: 'p2', name: 'I <3 DOLPHINS BABY TEE',     drop: 'DOLPHIN CLUB',    price: 45,  unitCost: 11, stock: 112, startInventory: 300, sold7d: 44, soldPrev7d: 51, soldTotal: 188, published: true },
-  { id: 'p3', name: 'ARCHIPELAGO CAP · NAVY',     drop: 'ARCHIPELAGO',     price: 46,  unitCost: 13, stock: 0,   startInventory: 150, sold7d: 38, soldPrev7d: 22, soldTotal: 150, published: true },
+  { id: 'p3', name: 'ARCHIPELAGO CAP · NAVY',     drop: 'ARCHIPELAGO',     price: 46,  unitCost: 13, stock: 0,   startInventory: 150, sold7d: 38, soldPrev7d: 22, soldTotal: 150, published: true, restockPolicy: 'REPLENISH' },
   { id: 'p4', name: 'INHALER ZIPPER JERSEY',      drop: 'TROPICAL MARGINS', price: 118, unitCost: 38, stock: 58, startInventory: 140, sold7d: 19, soldPrev7d: 17, soldTotal: 82,  published: true },
   { id: 'p5', name: 'WATER DROPLET SARONG',       drop: 'DOLPHIN CLUB',    price: 56,  unitCost: 15, stock: 71,  startInventory: 120, sold7d: 8,  soldPrev7d: 9,  soldTotal: 49,  published: true },
   { id: 'p6', name: 'S*XBOMB BABY TEE',           drop: 'DOLPHIN CLUB',    price: 45,  unitCost: 11, stock: 4,   startInventory: 160, sold7d: 27, soldPrev7d: 30, soldTotal: 156, published: true },
@@ -66,6 +67,7 @@ const channels: Channel[] = [
 
 function buildDays(): DayPoint[] {
   const r = rng(260827);
+  const rs = rng(4242); // separate stream: adding sessions must not shift the revenue sample
   const days: DayPoint[] = [];
   for (let i = 29; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
@@ -75,9 +77,10 @@ function buildDays(): DayPoint[] {
     const revenue = Math.round(base * dropBoost * (0.85 + r() * 0.4));
     const orders = Math.max(6, Math.round(revenue / (88 + r() * 30)));
     const spend = Math.round((300 + r() * 160) * (i <= 5 ? 1.4 : 1));
+    const sessions = Math.round(orders / (0.018 + rs() * 0.014));
     days.push({
       date: `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-      revenue, orders, spend,
+      revenue, orders, spend, sessions,
     });
   }
   return days;
@@ -156,7 +159,7 @@ export const fixtureData: ParkData = {
   bankBalance: 23480,
   repeatRate: 0.34,
   refundRate: 0.031,
-  guestsToday: 486,
+  meta: { sample: true },
   grossMargin: 0.62,
   targetRoas: 3.0,
   growthTargetPct: 25,

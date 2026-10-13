@@ -1,26 +1,26 @@
 import { useTerminal } from '@/terminal/TerminalContext';
 
 export default function OrdersDesk() {
-  const { data, metrics, liveEvents, range } = useTerminal();
+  const { data, metrics, liveEvents, range, imported } = useTerminal();
   if (!data || !metrics) return null;
 
   const days = data.days.slice(-range);
   const maxRev = Math.max(...days.map((d) => d.revenue), 1);
-  const refunds = Math.round(metrics.orders * data.refundRate);
+  const asOf = data.meta?.coverageEnd ? new Date(data.meta.coverageEnd).toLocaleDateString() : null;
 
   return (
     <div className="flex h-full min-h-0 gap-2 p-2">
       {/* order tape */}
       <div className="panel flex min-h-0 flex-1 flex-col">
         <div className="panel-head">
-          <span>ORDER TAPE · TODAY</span>
-          <span className="phosphor caret">LIVE</span>
+          <span>ORDER TAPE · {imported ? `SNAPSHOT${asOf ? ` TO ${asOf}` : ' · PERIOD UNKNOWN'}` : 'SAMPLE'}</span>
+          {!imported && <span className="tier-amber">SIMULATED</span>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {liveEvents.map((e) => (
             <div key={e.id} className="tape-row" style={{ background: 'rgba(0,244,142,0.06)' }}>
-              <span className="font-display tier-green shrink-0">NEW</span>
-              <span className="dim shrink-0">NOW</span>
+              <span className="font-display tier-amber shrink-0">SIM</span>
+              <span className="dim shrink-0">DEMO</span>
               <span className="warm flex-1 truncate">{e.text}</span>
               <span className="phosphor font-display shrink-0">+${e.amount}</span>
             </div>
@@ -43,9 +43,13 @@ export default function OrdersDesk() {
           <div className="panel p-2.5">
             <div className="font-display text-sm dim">NET REVENUE</div>
             <div className="font-display text-3xl phosphor">${metrics.revenue.toLocaleString()}</div>
-            <div className={`text-[0.72rem] ${metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
-              {metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(metrics.revenueDeltaPct).toFixed(1)}% VS PREV
-            </div>
+            {metrics.revenueDeltaPct !== null ? (
+              <div className={`text-[0.72rem] ${metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
+                {metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(metrics.revenueDeltaPct).toFixed(1)}% VS PREV
+              </div>
+            ) : (
+              <div className="text-[0.72rem] dim">NO COMPARABLE PREV PERIOD</div>
+            )}
           </div>
           <div className="panel p-2.5">
             <div className="font-display text-sm dim">ORDERS / AOV</div>
@@ -54,13 +58,13 @@ export default function OrdersDesk() {
           </div>
           <div className="panel p-2.5">
             <div className="font-display text-sm dim">REGULARS</div>
-            <div className="font-display text-3xl tier-green">{Math.round(data.repeatRate * 100)}%</div>
-            <div className="text-[0.72rem] dim">REPEAT CUSTOMER RATE</div>
+            <div className="font-display text-3xl tier-green">{data.repeatRate !== undefined ? `${Math.round(data.repeatRate * 100)}%` : '—'}</div>
+            <div className="text-[0.72rem] dim">{data.repeatRate !== undefined ? 'REPEAT RATE · AS REPORTED' : 'REPEAT RATE · NOT IN DATA'}</div>
           </div>
           <div className="panel p-2.5">
             <div className="font-display text-sm dim">REFUNDS</div>
-            <div className="font-display text-3xl tier-amber">{refunds}</div>
-            <div className="text-[0.72rem] dim">{(data.refundRate * 100).toFixed(1)}% OF ORDERS</div>
+            <div className="font-display text-3xl tier-amber">{data.refundRate !== undefined ? `${(data.refundRate * 100).toFixed(1)}%` : '—'}</div>
+            <div className="text-[0.72rem] dim">{data.refundRate !== undefined ? 'REFUND RATE · AS REPORTED' : 'REFUND RATE · NOT IN DATA'}</div>
           </div>
         </div>
 

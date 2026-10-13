@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTerminal } from '@/terminal/TerminalContext';
 import { rideState, sellThrough, daysOfStock } from '@/game/engine';
+import type { Product } from '@/game/types';
 
 type SortKey = 'revenue' | 'units' | 'stock' | 'sellthrough';
 
@@ -12,8 +13,14 @@ const SORTS: { key: SortKey; label: string; hint: string }[] = [
 ];
 
 const STATE_TONE: Record<string, string> = {
-  THRIVING: 'tier-green', NORMAL: 'tier-green', QUIET: 'tier-amber', BROKEN: 'tier-red', CLOSED: 'tier-amber',
+  THRIVING: 'tier-green', NORMAL: 'tier-green', QUIET: 'tier-amber', CLOSED: 'tier-amber',
 };
+
+// A sellout's tone follows intent: a finished limited run is a success.
+function stateTone(state: string, p: Product): string {
+  if (state !== 'SOLD OUT') return STATE_TONE[state];
+  return p.restockPolicy === 'LIMITED' ? 'palm' : p.restockPolicy === 'REPLENISH' ? 'tier-red' : 'tier-amber';
+}
 
 export default function InventoryDesk() {
   const { data, metrics } = useTerminal();
@@ -81,7 +88,7 @@ export default function InventoryDesk() {
                     <td className="px-2 py-2 text-right font-display text-base text-[var(--vhs-white)]">${p.price}</td>
                     <td className="px-2 py-2 text-right dim">${p.unitCost}</td>
                     <td className="px-2 py-2 text-right water">{Math.round(margin * 100)}%</td>
-                    <td className={`px-2 py-2 text-right font-display text-base ${p.stock === 0 ? 'tier-red' : p.stock < 10 ? 'tier-amber' : 'warm'}`}>
+                    <td className={`px-2 py-2 text-right font-display text-base ${p.stock === 0 ? (p.restockPolicy === 'LIMITED' ? 'dim' : 'tier-red') : p.stock < 10 ? 'tier-amber' : 'warm'}`}>
                       {p.stock}
                     </td>
                     <td className="px-2 py-2 text-right warm">
@@ -97,7 +104,9 @@ export default function InventoryDesk() {
                       {dos === Infinity ? '—' : `${Math.floor(dos)}D`}
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <span className={`badge ${STATE_TONE[st]}`}>{st}</span>
+                      <span className={`badge ${stateTone(st, p)}`} title={p.restockPolicy ? `RESTOCK POLICY: ${p.restockPolicy}` : 'RESTOCK POLICY NOT SET'}>
+                        {st === 'SOLD OUT' && p.restockPolicy === 'LIMITED' ? 'SOLD OUT ✓' : st}
+                      </span>
                     </td>
                   </tr>
                 );

@@ -2,9 +2,17 @@
 // Pure functions over ParkData. Thresholds and formulas live here so they
 // can be tuned without touching UI.
 
-import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier } from './types';
+import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier, RideState, DayPoint } from './types';
 
-export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'BROKEN' | 'CLOSED';
+export type { RideState };
+
+export interface RatingPart {
+  label: string;
+  /** null = inputs unavailable; the part is left out of the rating, not scored as zero */
+  score: number | null;
+  weight: number;
+  note: string;
+}
 
 export interface Metrics {
   revenue: number;
@@ -14,12 +22,15 @@ export interface Metrics {
   roas: number;
   mer: number;
   breakEvenRoas: number;
-  guests: number;
-  conversionRate: number;
+  /** Measured sessions over the window; null unless every day in it carries sessions. */
+  guests: number | null;
+  /** Orders ÷ measured sessions, %; null when sessions are unavailable. */
+  conversionRate: number | null;
   rating: number;
   ratingBand: string;
-  ratingParts: { label: string; score: number; weight: number; note: string }[];
-  revenueDeltaPct: number;
+  ratingParts: RatingPart[];
+  /** % change vs the previous equal-length window; null without a full, non-zero previous window. */
+  revenueDeltaPct: number | null;
   inventoryUnits: number;
   inventoryCost: number;
   inventoryRetail: number;
@@ -43,9 +54,11 @@ export function daysOfStock(p: Product): number {
   return v <= 0 ? Infinity : p.stock / v;
 }
 
+// A sellout is a state, not a fault: whether it needs action depends on the
+// product's restock policy (see soldOutNotice).
 export function rideState(p: Product): RideState {
   if (!p.published) return 'CLOSED';
-  if (p.stock === 0) return 'BROKEN';
+  if (p.stock === 0) return 'SOLD OUT';
   const v = dailyVelocity(p);
   const prev = p.soldPrev7d / 7;
   if (v >= prev * 1.25 && sellThrough(p) > 0.25) return 'THRIVING';
@@ -166,7 +179,10 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
   const revenue = days.reduce((s, x) => s + x.revenue, 0);
   const orders = days.reduce((s, x) => s + x.orders, 0);
   const spend = days.reduce((s, x) => s + x.spend, 0);
-  const prevRevenue = prev.reduce((s, x) => s + x.revenue, 0) || 1;
+  // No substitute baseline: comparing against an empty or partial window
+  // (or $0) produces numbers like +9900% that mean nothing.
+  const prevRevenue = prev.length === rangeDays ? prev.reduce((s, x) => s + x.revenue, 0) : 0;
+  const revenueDeltaPct = prevRevenue > 0 ? ((revenue - prevRevenue) / prevRevenue) * 100 : null;
 
   const attrRevenue = d.campaigns.reduce((s, c) => s + c.revenue, 0);
   const campSpend = d.campaigns.reduce((s, c) => s + c.spend, 0);
@@ -174,7 +190,7 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
   const mer = spend > 0 ? revenue / spend : 0;
   const breakEvenRoas = 1 / d.grossMargin;
 
-  const guests = Math.round(d.guestsToday * (rangeDays === 1 ? 1 : rangeDays * 0.82));
+  const guests = measuredSessions(days);
 
   const inventoryUnits = d.products.reduce((s, p) => s + p.stock, 0);
   const inventoryCost = d.products.reduce((s, p) => s + p.stock * p.unitCost, 0);
@@ -183,24 +199,45 @@ export function computeMetrics(d: ParkData, rangeDays: number): Metrics {
   const overallSellThrough = totalSold / (totalSold + inventoryUnits || 1);
 
   const ratingParts = buildRating(d, { revenue, prevRevenue, roas, breakEvenRoas });
-  const rating = Math.round(ratingParts.reduce((s, p) => s + p.score * p.weight, 0));
+  const rating = combineRating(ratingParts);
 
   return {
     revenue, orders,
     aov: orders > 0 ? revenue / orders : 0,
     spend, roas, mer, breakEvenRoas,
     guests,
-    conversionRate: guests > 0 ? (orders / guests) * 100 : 0,
+    conversionRate: guests !== null && guests > 0 ? (orders / guests) * 100 : null,
     rating,
     ratingBand: bandFor(rating),
     ratingParts,
-    revenueDeltaPct: ((revenue - prevRevenue) / prevRevenue) * 100,
+    revenueDeltaPct,
     inventoryUnits, inventoryCost, inventoryRetail, overallSellThrough,
     pipelineUnits: d.pipeline.reduce((s, i) => s + i.qty, 0),
     pipelineCost: d.pipeline.reduce((s, i) => s + pipelineCost(i), 0),
     pipelineGross: d.pipeline.reduce((s, i) => s + pipelineGross(i), 0),
     pipelineNet: d.pipeline.reduce((s, i) => s + pipelineNet(i), 0),
   };
+}
+
+// Sessions only count when measured for every day of the window — a partial
+// window would make conversion look better or worse than it was.
+export function measuredSessions(days: DayPoint[]): number | null {
+  if (days.length === 0) return null;
+  let total = 0;
+  for (const x of days) {
+    if (typeof x.sessions !== 'number') return null;
+    total += x.sessions;
+  }
+  return total;
+}
+
+// Weighted 0–1000 over the parts whose inputs exist. Weights sum to 10 when
+// every part is available, so a complete rating is unchanged by this.
+export function combineRating(parts: RatingPart[]): number {
+  const known = parts.filter((p): p is RatingPart & { score: number } => p.score !== null);
+  const weight = known.reduce((s, p) => s + p.weight, 0);
+  if (weight === 0) return 0;
+  return Math.round((known.reduce((s, p) => s + p.score * p.weight, 0) / weight) * 10);
 }
 
 function bandFor(r: number): string {
@@ -215,16 +252,19 @@ function bandFor(r: number): string {
 function buildRating(
   d: ParkData,
   ctx: { revenue: number; prevRevenue: number; roas: number; breakEvenRoas: number },
-) {
-  const momentum = clamp(((ctx.revenue / ctx.prevRevenue) - 0.7) / 0.6, 0, 1) * 100;
+): RatingPart[] {
+  const momentum = ctx.prevRevenue > 0 ? clamp(((ctx.revenue / ctx.prevRevenue) - 0.7) / 0.6, 0, 1) * 100 : null;
 
-  const live = d.products.filter((p) => p.published);
+  // A completed limited run is neither healthy nor unhealthy — it's done.
+  const live = d.products.filter((p) => p.published && !(p.stock === 0 && p.restockPolicy === 'LIMITED'));
   const healthy = live.filter((p) => p.stock > 0 && dailyVelocity(p) > 0.3);
   const rideHealth = live.length ? (healthy.length / live.length) * 100 : 0;
 
   const marketing = clamp((ctx.roas - ctx.breakEvenRoas * 0.6) / (d.targetRoas - ctx.breakEvenRoas * 0.6), 0, 1) * 100;
 
-  const happiness = clamp((1 - d.refundRate * 8) * 0.6 + d.repeatRate * 1.1 * 0.4, 0, 1) * 100;
+  const happiness = d.refundRate !== undefined && d.repeatRate !== undefined
+    ? clamp((1 - d.refundRate * 8) * 0.6 + d.repeatRate * 1.1 * 0.4, 0, 1) * 100
+    : null;
 
   const active = d.quests.filter((q) => q.daysLeft > 0);
   const questPace = active.length
@@ -236,10 +276,10 @@ function buildRating(
   const discipline = clamp(1 - dead * 0.18 - stockouts * 0.25, 0, 1) * 100;
 
   return [
-    { label: 'SALES MOMENTUM', score: momentum, weight: 2.5, note: 'revenue vs trailing baseline' },
+    { label: 'SALES MOMENTUM', score: momentum, weight: 2.5, note: momentum === null ? 'no comparable previous period — left out' : 'revenue vs trailing baseline' },
     { label: 'RIDE HEALTH', score: rideHealth, weight: 2.0, note: 'products in stock + selling' },
     { label: 'MARKETING EFFICIENCY', score: marketing, weight: 2.0, note: `roas vs break-even ${ctx.breakEvenRoas.toFixed(2)}` },
-    { label: 'GUEST HAPPINESS', score: happiness, weight: 1.5, note: 'refunds ↓ · repeat customers ↑' },
+    { label: 'GUEST HAPPINESS', score: happiness, weight: 1.5, note: happiness === null ? 'refund/repeat rates not in data — left out' : 'refunds ↓ · repeat customers ↑' },
     { label: 'QUEST PACE', score: questPace, weight: 1.0, note: 'active scenario progress' },
     { label: 'INVENTORY DISCIPLINE', score: discipline, weight: 1.0, note: 'dead stock ↓ · stockouts ↓' },
   ];
@@ -263,37 +303,12 @@ export function campaignVerdict(c: Campaign, breakEvenRoas: number, targetRoas: 
 // (they exist as ONE-OFF cost lines, paid this month); DESIGN/SAMPLES runs
 // are committed — and paid — at their ETA month. Expected sell-through
 // revenue lands the month after stock arrives.
-
-// Money stockists owe for units already sold on their shelves —
-// sold units × retail × wholesale cut, per stockist.
-export function stockistOwed(d: ParkData): { name: string; amount: number }[] {
-  return d.channels
-    .filter((c) => c.type !== 'ONLINE')
-    .map((c) => ({
-      name: c.name,
-      amount: Math.round(
-        c.stock.reduce((s, r) => {
-          const p = d.products.find((x) => x.id === r.productId);
-          return p ? s + r.sold * p.price * d.wholesalePct : s;
-        }, 0),
-      ),
-    }))
-    .filter((x) => x.amount > 0);
-}
-
-export function totalStockistOwed(d: ParkData): number {
-  return stockistOwed(d).reduce((s, x) => s + x.amount, 0);
-}
-
-// Ongoing wholesale income: stockist register sales (trailing 30d channel
-// revenue) × the wholesale cut — what shelves keep paying if pace holds.
-export function stockistMonthlyPace(d: ParkData): number {
-  return Math.round(
-    d.channels
-      .filter((c) => c.type !== 'ONLINE')
-      .reduce((s, c) => s + c.revenue, 0) * d.wholesalePct,
-  );
-}
+//
+// Stockist money is deliberately NOT forecast. Cumulative shelf sales ×
+// today's retail × one wholesale % is not an amount anyone owes: it ignores
+// payments already received, per-partner agreements, consignment commission
+// and statement periods. It returns once invoices, consignment statements and
+// allocated payments exist as records.
 
 export interface ForecastEvent { text: string; amount: number; }
 
@@ -302,7 +317,6 @@ export interface ForecastMonth {
   opening: number;
   baselineIn: number;
   pipelineIn: number;
-  receivableIn: number; // stockist payouts collected (month 1) then wholesale pace (month 2+)
   burnOut: number;
   productionOut: number;
   net: number;
@@ -349,21 +363,9 @@ export function forecastCashflow(d: ParkData, monthlyRevenue: number, months = 6
         events.push({ text: `${i.name} REVENUE @ ${Math.round(i.expectedSellThrough * 100)}% SELL-THRU`, amount: rev });
       }
     }
-    let receivableIn = 0;
-    if (m === 1) {
-      receivableIn = totalStockistOwed(d);
-      if (receivableIn > 0) {
-        events.push({ text: 'STOCKIST PAYOUTS COLLECTED', amount: receivableIn });
-      }
-    } else {
-      receivableIn = stockistMonthlyPace(d);
-      if (receivableIn > 0) {
-        events.push({ text: 'STOCKIST WHOLESALE PACE', amount: receivableIn });
-      }
-    }
-    const net = monthlyRevenue + pipelineIn + receivableIn - burn - productionOut;
+    const net = monthlyRevenue + pipelineIn - burn - productionOut;
     const closing = bank + net;
-    out.push({ label, opening: bank, baselineIn: monthlyRevenue, pipelineIn, receivableIn, burnOut: burn, productionOut, net, closing, events });
+    out.push({ label, opening: bank, baselineIn: monthlyRevenue, pipelineIn, burnOut: burn, productionOut, net, closing, events });
     bank = closing;
   }
   return out;
@@ -381,6 +383,19 @@ export function forecastVerdict(fc: ForecastMonth[]): { tone: 'red' | 'amber' | 
   return { tone: 'green', text: `SELF-FUNDING — LOW POINT $${Math.round(low.closing).toLocaleString()} IN ${low.label}` };
 }
 
+// What a sellout means depends on intent. A limited run selling through is
+// the plan working; a core item selling out needs a restock decision; an
+// item with no policy set gets a neutral prompt to decide — not an alarm.
+export function soldOutNotice(p: Product): { tier: Tier; text: string; detail: string } {
+  if (p.restockPolicy === 'LIMITED') {
+    return { tier: 'green', text: `${p.name} SOLD OUT — LIMITED RUN COMPLETE`, detail: `${p.soldTotal} units sold, 100% of the run. No restock planned.` };
+  }
+  if (p.restockPolicy === 'REPLENISH') {
+    return { tier: 'red', text: `${p.name} SOLD OUT — CORE ITEM`, detail: `Sold ${p.soldTotal} units. Marked for replenishment: plan the next run.` };
+  }
+  return { tier: 'amber', text: `${p.name} SOLD OUT — RESTOCK OR RETIRE?`, detail: `Sold ${p.soldTotal} units. No restock policy set for this product.` };
+}
+
 // Notification rules — red = act now, amber = notable, green = context
 export function buildNotices(d: ParkData, m: Metrics): Notice[] {
   const out: Notice[] = [];
@@ -390,7 +405,8 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
 
   for (const p of d.products) {
     if (p.published && p.stock === 0) {
-      push('red', 'SHOP', `${p.name} SOLD OUT — RIDE IS BROKEN`, `Sold ${p.soldTotal} units. Restock or guests leave the queue.`, 'i', '07:12');
+      const n = soldOutNotice(p);
+      push(n.tier, 'SHOP', n.text, n.detail, 'i', '07:12');
     } else if (p.published && daysOfStock(p) < 5 && dailyVelocity(p) > 1) {
       push('amber', 'SHOP', `${p.name} STOCKOUT RISK — ${Math.floor(daysOfStock(p))} DAYS LEFT`, `${p.stock} units at ${dailyVelocity(p).toFixed(1)}/day velocity.`, 'i', '06:48');
     }
@@ -425,7 +441,7 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
     if (c.type === 'ONLINE') continue;
     const st = channelStats(c, d.products);
     for (const r of st.rows) {
-      if (r.sellThrough >= 0.85 && r.allocated >= 10) {
+      if (r.sellThrough >= 0.85 && r.allocated >= 10 && r.product.restockPolicy !== 'LIMITED') {
         push('green', 'SHOP', `${c.name}: ${r.product.name} NEARLY SOLD THROUGH`, `${r.sold}/${r.allocated} units sold — ship a restock while it's hot.`, 'l', '07:40');
       } else if (r.onHand >= 15 && r.sellThrough < 0.3) {
         push('amber', 'SHOP', `${c.name}: ${r.product.name} SITTING ON SHELF`, `${r.onHand} units on hand, ${Math.round(r.sellThrough * 100)}% sold. Swap the display or pull stock back.`, 'l', '07:45');
@@ -441,7 +457,7 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
     }
   }
 
-  if (m.revenueDeltaPct > 10) {
+  if (m.revenueDeltaPct !== null && m.revenueDeltaPct > 10) {
     push('green', 'PARK', `REVENUE +${m.revenueDeltaPct.toFixed(0)}% VS PREVIOUS PERIOD`, 'Park cash is climbing.', 's', '09:01');
   }
 
@@ -499,8 +515,8 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
   }
 
   for (const p of d.products) {
-    if (p.published && p.stock === 0 && p.sold7d > 0) {
-      push('red', `RESTOCK ${p.name}`, `was moving ${p.sold7d} units/wk when it broke`, p.price * p.sold7d, 'i');
+    if (p.published && p.stock === 0 && p.sold7d > 0 && p.restockPolicy === 'REPLENISH') {
+      push('red', `RESTOCK ${p.name}`, `core item, was moving ${p.sold7d} units/wk before selling out`, p.price * p.sold7d, 'i');
     }
   }
 
@@ -513,7 +529,7 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
     if (c.type === 'ONLINE') continue;
     const st = channelStats(c, d.products);
     for (const r of st.rows) {
-      if (r.sellThrough >= 0.85 && r.allocated >= 10) {
+      if (r.sellThrough >= 0.85 && r.allocated >= 10 && r.product.restockPolicy !== 'LIMITED') {
         push('amber', `SHIP ${r.product.name} TO ${c.name}`, `${r.sold}/${r.allocated} sold — shelf nearly empty`, r.product.price * r.sold, 'l');
       }
     }
@@ -522,11 +538,6 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
   const dip = forecastCashflow(d, monthlyRevenue, 6).find((x) => x.closing < 0);
   if (dip) {
     push('red', `COVER ${dip.label} SHORTFALL`, 'delay a production run or move units faster', Math.abs(Math.round(dip.closing)), 'c');
-  }
-
-  const owed = totalStockistOwed(d);
-  if (owed >= 500) {
-    push('amber', 'COLLECT STOCKIST PAYOUTS', 'units already sold on their shelves — invoice and collect', owed, 'l');
   }
 
   const dead = d.products
@@ -683,7 +694,7 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
   const partnerShare = partnerRev / (onlineRev + partnerRev || 1);
   if (partnerShare > 0.5) {
     push('amber', `STOCKISTS DRIVE ${Math.round(partnerShare * 100)}% OF REVENUE`,
-      `Wholesale pace ≈ $${stockistMonthlyPace(d).toLocaleString()}/mo at your cut. Protect shelf stock and collect payouts on schedule — that IS the business.`);
+      'Partner register sales, not money received. Keep statements and payments current — that IS the business.');
   }
 
   // 8. stockist divergence — where to send the next box
@@ -716,12 +727,14 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
   return out.sort((a, b) => order[a.tier] - order[b.tier]).slice(0, 6);
 }
 
-// Ambient ticker lines — flavor driven by real states.
+// Ambient ticker lines — FICTIONAL flavor driven by real states. These are
+// invented guest voices, never customer evidence; the ticker labels them so.
+// No scarcity-pressure lines for limited runs that sold out as planned.
 export function guestThoughts(d: ParkData, m: Metrics): string[] {
   const t: string[] = [];
-  const broken = d.products.filter((p) => rideState(p) === 'BROKEN');
+  const missed = d.products.filter((p) => rideState(p) === 'SOLD OUT' && p.restockPolicy === 'REPLENISH');
   const hot = d.products.filter((p) => rideState(p) === 'THRIVING');
-  for (const p of broken) t.push(`"NOOO, ${p.name} IS SOLD OUT?!"`);
+  for (const p of missed) t.push(`"WAITING ON THE ${p.name} RESTOCK"`);
   for (const p of hot) t.push(`"THE ${p.name} LINE IS SO WORTH IT"`);
   t.push(`"PARK RATING ${m.rating} — THIS PLACE IS ${m.ratingBand}"`);
   t.push(`"SPENT $${Math.round(m.aov)} AND ZERO REGRETS"`);

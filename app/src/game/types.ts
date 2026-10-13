@@ -3,7 +3,12 @@
 // pipeline products are rides under construction. No literal park scene.
 
 export type Tier = 'red' | 'amber' | 'green';
-export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'BROKEN' | 'CLOSED';
+export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'SOLD OUT' | 'CLOSED';
+
+// REPLENISH: a core item expected back in stock (caps). LIMITED: an
+// intentional one-off run — selling out is the plan, not a fault.
+// Absent: policy not set yet; a sellout is surfaced as a decision, not an alarm.
+export type RestockPolicy = 'REPLENISH' | 'LIMITED';
 
 export interface Product {
   id: string;
@@ -17,6 +22,7 @@ export interface Product {
   soldPrev7d: number;
   soldTotal: number;
   published: boolean;
+  restockPolicy?: RestockPolicy;
 }
 
 export interface PipelineItem {
@@ -71,6 +77,7 @@ export interface DayPoint {
   revenue: number;
   orders: number;
   spend: number;
+  sessions?: number;       // measured storefront sessions; absent = not collected
 }
 
 export interface Quest {
@@ -106,6 +113,17 @@ export interface Notice {
   desk: string;
 }
 
+// When the data in a snapshot is FROM, as opposed to when it was imported.
+// All ISO 8601. Every field is optional because older syncs never sent it —
+// a missing date renders as "unknown", never as "just now".
+export interface SnapshotMeta {
+  sample?: boolean;        // true only for the built-in fixture data
+  coverageStart?: string;  // first day the snapshot's records cover
+  coverageEnd?: string;    // last moment the snapshot's records cover
+  extractedAt?: string;    // when the sync pulled the data from its sources
+  sources?: { label: string; extractedAt?: string; coverageEnd?: string }[];
+}
+
 export interface ParkData {
   products: Product[];
   pipeline: PipelineItem[];
@@ -116,9 +134,9 @@ export interface ParkData {
   quests: Quest[];
   costs: CostItem[];
   bankBalance: number;     // current bank account (manual entry until a feed exists)
-  repeatRate: number;
-  refundRate: number;
-  guestsToday: number;
+  repeatRate?: number;     // as reported by the source; absent = unavailable
+  refundRate?: number;     // as reported by the source; absent = unavailable
+  meta?: SnapshotMeta;
   grossMargin: number;
   targetRoas: number;
   growthTargetPct: number; // planning input: next production run's retail growth vs current pipeline
