@@ -1,5 +1,6 @@
 import { useTerminal } from '@/terminal/TerminalContext';
-import { monthlyBurn, oneOffCosts, burnByCategory, runwayMonths, monthlyAmount, forecastCashflow, forecastVerdict, trailing30dRevenue } from '@/game/engine';
+import { monthlyBurn, oneOffCosts, burnByCategory, runwayMonths, monthlyAmount, forecastCashflow, forecastVerdict, trailing30dRevenue, burnSource, actualMonthlySpend, cardOwed } from '@/game/engine';
+import { AccountLines, CashFlowTable } from '@/components/BankAccounts';
 import type { CostCategory, CostItem } from '@/game/types';
 import { InlineNumber, InlineText, RowBtn } from '@/components/InlineEdit';
 
@@ -69,7 +70,23 @@ export default function CostsDesk() {
 
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
-      {/* finances summary — the RCT finances window */}
+      {/* synced bank + card: balances and monthly cash flow */}
+      {data.accounts && data.accounts.length > 0 && (
+        <div className="window">
+          <div className="window-head">
+            <span className="wh-title">BUSINESS CASH FLOW</span>
+            <span className="dim text-sm">BANK + CARD · FROM ERA</span>
+          </div>
+          <div className="window-body grid gap-4" style={{ gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 3fr)' }}>
+            <AccountLines accounts={data.accounts} />
+            {data.cashflow && data.cashflow.length > 0
+              ? <CashFlowTable months={data.cashflow} />
+              : <div className="dim text-[0.74rem]">NO TRANSACTIONS IN THIS SYNC.</div>}
+          </div>
+        </div>
+      )}
+
+      {/* finances summary */}
       <div className="window">
         <div className="window-head">
           <span className="wh-title">FINANCES · BURN &amp; RUNWAY</span>
@@ -79,7 +96,11 @@ export default function CostsDesk() {
           <div>
             <div className="font-display text-sm dim">MONTHLY BURN</div>
             <div className="font-display text-3xl tier-red">${Math.round(burn).toLocaleString()}</div>
-            <div className="text-[0.68rem] dim">RECURRING ONLY</div>
+            <div className="text-[0.68rem] dim">
+              {burnSource(data) === 'ACTUAL_SPEND'
+                ? `ACTUAL · AVG OF LAST ${actualMonthlySpend(data)!.months} MO`
+                : burnSource(data) === 'NONE' ? 'NO COST LINES OR BANK DATA' : 'RECURRING ONLY'}
+            </div>
           </div>
           <div>
             <div className="font-display text-sm dim">ONE-OFF PRODUCTION</div>
@@ -88,20 +109,33 @@ export default function CostsDesk() {
           </div>
           <div>
             <div className="font-display text-sm dim">BANK</div>
-            <div>
-              <InlineNumber
-                className="font-display text-3xl phosphor"
-                value={data.bankBalance}
-                format={(v) => `$${v.toLocaleString()}`}
-                onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
-              />
-            </div>
-            <div className="text-[0.68rem] dim">EDIT AFTER BANK CHECK</div>
+            {data.accounts && data.accounts.length > 0 ? (
+              <>
+                <div className={`font-display text-3xl ${data.bankBalance < 0 ? 'tier-red' : 'phosphor'}`}>
+                  {data.bankBalance < 0 ? '−' : ''}${Math.abs(data.bankBalance).toLocaleString()}
+                </div>
+                <div className="text-[0.68rem] dim">
+                  SYNCED{cardOwed(data) !== null ? ` · CARD OWES $${cardOwed(data)!.toLocaleString()}` : ''}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <InlineNumber
+                    className="font-display text-3xl phosphor"
+                    value={data.bankBalance}
+                    format={(v) => `$${v.toLocaleString()}`}
+                    onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
+                  />
+                </div>
+                <div className="text-[0.68rem] dim">EDIT AFTER BANK CHECK</div>
+              </>
+            )}
           </div>
           <div>
             <div className="font-display text-sm dim">RUNWAY</div>
             <div className={`font-display text-3xl ${runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}`}>
-              {runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
+              {runway === Infinity ? '∞' : data.bankBalance < 0 ? 'OVERDRAWN' : `${runway.toFixed(1)} MO`}
             </div>
             <div className="text-[0.68rem] dim">BANK ÷ BURN</div>
           </div>
@@ -137,7 +171,11 @@ export default function CostsDesk() {
       {/* category split bar */}
       <div className="window">
         <div className="window-head"><span className="wh-title">WHERE THE MONEY GOES</span>
-          <span className="dim text-sm">${Math.round(totalWithOneOffs).toLocaleString()} TOTAL THIS MONTH</span>
+          <span className="dim text-sm">
+            {data.costs.length === 0
+              ? data.cashflow?.length ? 'NO COST LINES ENTERED · ACTUAL SPENDING IS ABOVE' : 'NO COST LINES ENTERED'
+              : `$${Math.round(totalWithOneOffs).toLocaleString()} TOTAL THIS MONTH`}
+          </span>
         </div>
         <div className="window-body">
           <div className="flex h-5 w-full border border-black">

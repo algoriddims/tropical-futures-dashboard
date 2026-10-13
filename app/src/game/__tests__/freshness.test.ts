@@ -49,3 +49,15 @@ describe('describeFreshness (contract case 7)', () => {
     expect(f.items).toEqual([{ label: 'SAMPLE DATA', text: 'NOT LIVE', tone: 'warn' }]);
   });
 });
+
+describe('per-source age', () => {
+  it('uses when the source data is from (e.g. bank balance date), not when it was fetched', () => {
+    const f = describeFreshness({
+      imported: true,
+      importedAt: '2026-10-13T20:30:00Z',
+      meta: { coverageEnd: '2026-10-13T20:00:00Z', sources: [{ label: 'ERA', extractedAt: '2026-10-13T20:25:00Z', coverageEnd: '2026-10-13T00:09:00Z' }] },
+      now: new Date('2026-10-13T20:31:00Z'),
+    });
+    expect(f.items.find((i) => i.label === 'ERA')?.text).toBe('20h AGO');
+  });
+});

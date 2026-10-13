@@ -15,6 +15,7 @@
 //                      user to resolve.
 
 import type { CostItem, ParkData } from './types';
+import { syncedCash } from './engine';
 import { validateParkData } from './validate';
 
 export const FIELD_OWNERSHIP = {
@@ -61,7 +62,8 @@ export function loadManual(): Partial<ManualSlices> {
 export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData {
   return {
     ...base,
-    bankBalance: m.bankBalance ?? base.bankBalance,
+    // Synced bank accounts own the balance when present; manual entry is the fallback.
+    bankBalance: syncedCash(base) ?? m.bankBalance ?? base.bankBalance,
     costs: m.costs ?? base.costs,
     growthTargetPct: m.growthTargetPct ?? base.growthTargetPct ?? 25,
     wholesalePct: m.wholesalePct ?? base.wholesalePct ?? 0.6,

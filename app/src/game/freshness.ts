@@ -72,7 +72,8 @@ export function describeFreshness(args: {
   const coverage = ageItem('COVERAGE', coverageEnd, now, STALE_AFTER_HOURS);
   const items: FreshnessItem[] = [coverage, ageItem('EXTRACTED', meta?.extractedAt, now), ageItem('IMPORTED', importedAt, now)];
   for (const s of meta?.sources ?? []) {
-    items.push(ageItem(s.label.toUpperCase(), s.extractedAt ?? s.coverageEnd, now, STALE_AFTER_HOURS));
+    // a source's age is how old its data is (e.g. when the bank reported a balance), not when we fetched it
+    items.push(ageItem(s.label.toUpperCase(), s.coverageEnd ?? s.extractedAt, now, STALE_AFTER_HOURS));
   }
   return { mode: 'imported', stale: coverage.tone !== 'ok', coverageEnd, items };
 }

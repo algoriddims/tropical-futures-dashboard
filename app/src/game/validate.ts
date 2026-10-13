@@ -90,6 +90,25 @@ const meta = z.looseObject({
   notes: z.array(text).optional(),
 });
 
+const account = z.looseObject({
+  id: text.min(1),
+  name: text,
+  mask: text,
+  kind: z.enum(['CHECKING', 'SAVINGS', 'CARD']),
+  balance: num,
+  available: num.optional(),
+  creditLimit: nonNeg.optional(),
+  asOf: isoDate,
+});
+
+const money = z.record(z.string(), num);
+const cashMonth = z.looseObject({
+  month: z.string().regex(/^\d{4}-\d{2}$/, 'must be YYYY-MM'),
+  partial: z.boolean(),
+  cashIn: money,
+  spend: money,
+});
+
 export const parkDataSchema = z.looseObject({
   products: z.array(product),
   pipeline: z.array(pipelineItem),
@@ -109,6 +128,8 @@ export const parkDataSchema = z.looseObject({
   repeatRate: rate.optional(),
   refundRate: rate.optional(),
   meta: meta.optional(),
+  accounts: z.array(account).optional(),
+  cashflow: z.array(cashMonth).optional(),
   grossMargin: num.gt(0).max(1),
   targetRoas: num.positive(),
 });

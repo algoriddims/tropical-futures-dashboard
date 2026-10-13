@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { useTerminal } from '@/terminal/TerminalContext';
 import type { DeskKey } from '@/terminal/TerminalContext';
-import { channelStats, monthlyBurn, oneOffCosts, runwayMonths, buildMoves, trailing30dRevenue, daysUntil } from '@/game/engine';
+import { channelStats, monthlyBurn, oneOffCosts, runwayMonths, buildMoves, trailing30dRevenue, daysUntil, burnSource } from '@/game/engine';
 import { InlineNumber } from '@/components/InlineEdit';
+import { AccountLines } from '@/components/BankAccounts';
 
 function Window({ title, right, children, className = '', onClick }: {
   title: string; right?: ReactNode; children: ReactNode; className?: string; onClick?: () => void;
@@ -132,23 +133,32 @@ export default function StatusDesk() {
 
       {/* headline strip */}
       <div className="grid grid-cols-3 gap-2">
-        <Window title="BANK BALANCE" right="BANK ACCOUNT · CLICK TO SET">
-          <div className="flex items-end justify-between">
-            <div>
-              <InlineNumber
-                className="font-display text-6xl phosphor crt-flicker leading-none"
-                value={data.bankBalance}
-                format={(v) => `$${v.toLocaleString()}`}
-                title="SET BANK BALANCE"
-                onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
-              />
+        {data.accounts && data.accounts.length > 0 ? (
+          <Window title="BANK BALANCE" right="CHECKING + SAVINGS · SYNCED">
+            <div className={`font-display text-6xl leading-none ${data.bankBalance < 0 ? 'tier-red' : 'phosphor'}`}>
+              {data.bankBalance < 0 ? '−' : ''}${Math.abs(data.bankBalance).toLocaleString()}
             </div>
-            <div className="text-right text-[0.72rem] dim">
-              <div>MANUAL ENTRY</div>
-              <div>SALES ≠ CASH RECEIVED</div>
+            <div className="mt-2"><AccountLines accounts={data.accounts} /></div>
+          </Window>
+        ) : (
+          <Window title="BANK BALANCE" right="BANK ACCOUNT · CLICK TO SET">
+            <div className="flex items-end justify-between">
+              <div>
+                <InlineNumber
+                  className="font-display text-6xl phosphor crt-flicker leading-none"
+                  value={data.bankBalance}
+                  format={(v) => `$${v.toLocaleString()}`}
+                  title="SET BANK BALANCE"
+                  onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
+                />
+              </div>
+              <div className="text-right text-[0.72rem] dim">
+                <div>MANUAL ENTRY</div>
+                <div>SALES ≠ CASH RECEIVED</div>
+              </div>
             </div>
-          </div>
-        </Window>
+          </Window>
+        )}
 
         <Window title="SHOPIFY SALES" right={<button onClick={(e) => { e.stopPropagation(); setDesk('o'); }} className="keycap">O</button>}>
           <div className="flex items-end justify-between">
@@ -326,7 +336,7 @@ export default function StatusDesk() {
           <div>
             <div className="font-display text-sm dim">MONTHLY BURN</div>
             <div className="font-display text-2xl tier-red">${Math.round(burn).toLocaleString()}</div>
-            <div className="text-[0.68rem] dim">SUBS + PAYROLL + OPS</div>
+            <div className="text-[0.68rem] dim">{burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : 'SUBS + PAYROLL + OPS'}</div>
           </div>
           <div>
             <div className="font-display text-sm dim">ONE-OFF PRODUCTION</div>

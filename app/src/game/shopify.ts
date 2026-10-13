@@ -151,7 +151,7 @@ export function buildShopifySnapshot(x: ShopifyExtract): ParkData {
     orders: d.orders,
     ...(d.sessions !== null ? { sessions: d.sessions } : {}),
   }));
-  notes.push('Ad spend is not included: Meta ads are not connected.');
+  notes.push('Daily ad spend and ROAS are not included: Meta Ads is not connected. (With the bank sync, Meta billing on the card shows in cash flow.)');
 
   // ── channels ───────────────────────────────────────────────────────────
   const online = x.channels30d.find((c) => c.channel === 'Online Store');

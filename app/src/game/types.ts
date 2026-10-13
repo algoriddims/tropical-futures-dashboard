@@ -114,6 +114,36 @@ export interface Notice {
   desk: string;
 }
 
+// ── Bank & card (ERA) ─────────────────────────────────────────────────────
+export type AccountKind = 'CHECKING' | 'SAVINGS' | 'CARD';
+
+export interface BankAccount {
+  id: string;
+  name: string;
+  mask: string;            // last 4 digits
+  kind: AccountKind;
+  /** CHECKING/SAVINGS: cash held (negative = overdrawn). CARD: amount owed. */
+  balance: number;
+  available?: number;
+  creditLimit?: number;
+  asOf: string;            // ISO — when the bank reported this balance
+}
+
+export type CashInKind = 'SHOPIFY_PAYOUTS' | 'PAYPAL' | 'OWNER_TRANSFERS' | 'OTHER_IN';
+export type SpendKind = 'PRODUCTION' | 'SHIPPING' | 'ADS' | 'SOFTWARE' | 'ZELLE' | 'BANK_FEES' | 'OTHER';
+
+/**
+ * One calendar month of business cash movement across the synced accounts.
+ * Moves between them (card payments, savings sweeps) are excluded, so card
+ * spending counts once — when charged — not again when the card is paid.
+ */
+export interface CashMonth {
+  month: string;           // YYYY-MM
+  partial: boolean;        // the month isn't over (or coverage starts mid-month)
+  cashIn: Partial<Record<CashInKind, number>>;
+  spend: Partial<Record<SpendKind, number>>;
+}
+
 // When the data in a snapshot is FROM, as opposed to when it was imported.
 // All ISO 8601. Every field is optional because older syncs never sent it —
 // a missing date renders as "unknown", never as "just now".
@@ -140,6 +170,9 @@ export interface ParkData {
   repeatRate?: number;     // as reported by the source; absent = unavailable
   refundRate?: number;     // as reported by the source; absent = unavailable
   meta?: SnapshotMeta;
+  /** Synced bank/card accounts; when present, the bank balance comes from these, not manual entry. */
+  accounts?: BankAccount[];
+  cashflow?: CashMonth[];
   grossMargin: number;
   targetRoas: number;
   growthTargetPct: number; // planning input: next production run's retail growth vs current pipeline

@@ -2,7 +2,7 @@
 // Pure functions over ParkData. Thresholds and formulas live here so they
 // can be tuned without touching UI.
 
-import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier, RideState, DayPoint } from './types';
+import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier, RideState, DayPoint, CashMonth } from './types';
 
 export type { RideState };
 
@@ -91,7 +91,41 @@ export function monthlyAmount(c: CostItem): number {
   return c.amount;
 }
 
+// ── Synced bank / card (ERA) ──────────────────────────────────────────────
+
+/** Cash in synced checking + savings; null when no bank accounts are synced. */
+export function syncedCash(d: Pick<ParkData, 'accounts'>): number | null {
+  const cash = (d.accounts ?? []).filter((a) => a.kind !== 'CARD');
+  return cash.length ? Math.round(cash.reduce((s, a) => s + a.balance, 0) * 100) / 100 : null;
+}
+
+/** Owed on synced cards; null when no card is synced. */
+export function cardOwed(d: Pick<ParkData, 'accounts'>): number | null {
+  const cards = (d.accounts ?? []).filter((a) => a.kind === 'CARD');
+  return cards.length ? Math.round(cards.reduce((s, a) => s + a.balance, 0) * 100) / 100 : null;
+}
+
+export const monthSpend = (m: CashMonth) => Object.values(m.spend).reduce((s, v) => s + (v ?? 0), 0);
+export const monthIn = (m: CashMonth) => Object.values(m.cashIn).reduce((s, v) => s + (v ?? 0), 0);
+
+/** Average monthly business spending over the last (up to) 3 complete months; null without data. */
+export function actualMonthlySpend(d: Pick<ParkData, 'cashflow'>): { amount: number; months: number } | null {
+  const full = (d.cashflow ?? []).filter((m) => !m.partial).slice(-3);
+  if (!full.length) return null;
+  return { amount: full.reduce((s, m) => s + monthSpend(m), 0) / full.length, months: full.length };
+}
+
+export type BurnSource = 'COST_LINES' | 'ACTUAL_SPEND' | 'NONE';
+
+// Cost lines you've entered win; without any, burn falls back to what the
+// synced accounts actually spent — never to zero.
+export function burnSource(d: ParkData): BurnSource {
+  if (d.costs.some((c) => c.active && c.cadence !== 'ONE-OFF')) return 'COST_LINES';
+  return actualMonthlySpend(d) ? 'ACTUAL_SPEND' : 'NONE';
+}
+
 export function monthlyBurn(d: ParkData): number {
+  if (burnSource(d) === 'ACTUAL_SPEND') return actualMonthlySpend(d)!.amount;
   return d.costs.reduce((s, c) => s + monthlyAmount(c), 0);
 }
 
@@ -113,6 +147,7 @@ export function burnByCategory(d: ParkData): { category: CostCategory; monthly: 
 }
 
 export function runwayMonths(d: ParkData): number {
+  if (d.bankBalance < 0) return 0; // overdrawn: no runway, whatever the burn
   const burn = monthlyBurn(d);
   return burn > 0 ? d.bankBalance / burn : Infinity;
 }
@@ -491,6 +526,13 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
 
   if (m.revenueDeltaPct !== null && m.revenueDeltaPct > 10) {
     push('green', 'BUSINESS', `REVENUE +${m.revenueDeltaPct.toFixed(0)}% VS PREVIOUS PERIOD`, 'Sales are up on the previous period.', 's', '09:01');
+  }
+
+  // synced bank accounts
+  for (const a of d.accounts ?? []) {
+    if (a.kind !== 'CARD' && a.balance < 0) {
+      push('red', 'BUSINESS', `${a.name} ••${a.mask} OVERDRAWN`, `Balance $${a.balance.toLocaleString()} as of ${a.asOf.slice(0, 10)}. Overdraft fees apply to each item that clears while negative.`, 'c', '06:00');
+    }
   }
 
   // cost / runway rules

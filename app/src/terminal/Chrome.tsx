@@ -94,7 +94,7 @@ export function StatusBar() {
   return (
     <footer className="flex items-center gap-4 border-t border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1 font-display text-base overflow-hidden whitespace-nowrap">
       <span className="phosphor">
-        BANK ${data ? data.bankBalance.toLocaleString() : '—'}
+        BANK {data ? `${data.bankBalance < 0 ? '−' : ''}$${Math.abs(data.bankBalance).toLocaleString()}` : '—'}
       </span>
       <span className="warm">SCORE {metrics?.rating ?? '—'} · {metrics?.ratingBand ?? ''}</span>
       {data?.nextDrop && dropDays !== null && dropDays >= 0 && (
