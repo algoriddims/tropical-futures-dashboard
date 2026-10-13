@@ -12,6 +12,8 @@ import type { ManualSlices, ShelfEditStatus, ShelfField } from '@/game/overrides
 import { validateParkData } from '@/game/validate';
 import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
+import { loadLook, saveLook } from './look';
+import type { Look } from './look';
 
 export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g';
 
@@ -43,6 +45,9 @@ interface TerminalState {
   setRange: (r: number) => void;
   helpOpen: boolean;
   setHelpOpen: (b: boolean) => void;
+  /** Visual look — presentational only. */
+  look: Look;
+  toggleLook: () => void;
   /** Simulated order stream — sample mode only, never added to bank cash. */
   liveEvents: LiveEvent[];
   sourceName: string;
@@ -93,6 +98,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [desk, setDesk] = useState<DeskKey>('s');
   const [range, setRange] = useState(7);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [look, setLook] = useState<Look>(() => loadLook());
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [imported, setImported] = useState(false);
   const [importedAt, setImportedAt] = useState<string | null>(null);
@@ -180,6 +186,18 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const exportStored = useCallback(() => exportBackup(), []);
 
+  const toggleLook = useCallback(() => {
+    setLook((l) => {
+      const next = l === 'paper' ? 'terminal' : 'paper';
+      saveLook(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.look = look;
+  }, [look]);
+
   // Simulated order stream — makes the park feel alive on sample data.
   // Never runs on imported syncs, and never touches cash.
   const hasData = data !== null;
@@ -206,13 +224,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       const k = e.key.toLowerCase();
       if (k === '?') { setHelpOpen((h) => !h); return; }
       if (k === 'escape') { setHelpOpen(false); return; }
+      if (k === 't') { toggleLook(); return; }
       const deskHit = DESKS.find((d) => d.key === k);
       if (deskHit) { setDesk(deskHit.key); return; }
       if (k === '1') setRange(1);
       if (k === '2') setRange(7);
       if (k === '3') setRange(30);
     },
-    [],
+    [toggleLook],
   );
 
   useEffect(() => {
@@ -222,7 +241,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const value: TerminalState = {
     data, metrics, notices, desk, setDesk, range, setRange,
-    helpOpen, setHelpOpen, liveEvents,
+    helpOpen, setHelpOpen, look, toggleLook, liveEvents,
     sourceName: imported ? 'IMPORTED SYNC' : source.name,
     updateData, editShelf, resolveShelfEdit, shelfStatus, storageOk,
     imported, importedAt, storedSnapshotErrors, delta, importData, clearImport, exportStored,

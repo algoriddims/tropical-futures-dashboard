@@ -18,7 +18,7 @@ export default function OrdersDesk() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {liveEvents.map((e) => (
-            <div key={e.id} className="tape-row" style={{ background: 'rgba(0,244,142,0.06)' }}>
+            <div key={e.id} className="tape-row" style={{ background: 'var(--sim-row)' }}>
               <span className="font-display tier-amber shrink-0">SIM</span>
               <span className="dim shrink-0">DEMO</span>
               <span className="warm flex-1 truncate">{e.text}</span>

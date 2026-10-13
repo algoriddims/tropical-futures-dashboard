@@ -30,7 +30,7 @@ function Palm({ size = 18 }: { size?: number }) {
 }
 
 export function TopBar() {
-  const { desk, setDesk, range, setRange, setHelpOpen, imported } = useTerminal();
+  const { desk, setDesk, range, setRange, setHelpOpen, imported, look, toggleLook } = useTerminal();
   const [importOpen, setImportOpen] = useState(false);
   return (
     <header className="flex items-stretch border-b border-[var(--crt-mid)] bg-[var(--crt-dark)]">
@@ -63,6 +63,10 @@ export function TopBar() {
         <button onClick={() => setImportOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="IMPORT SYNC DATA">
           <span className={`keycap ${imported ? 'keycap-active' : ''}`}>⇪</span>
           <span className={`keycap-label font-display text-sm ${imported ? 'tier-green' : 'dim'}`}>IMPORT</span>
+        </button>
+        <button onClick={toggleLook} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="SWITCH LOOK (T)">
+          <span className="keycap">T</span>
+          <span className="keycap-label font-display text-sm dim">{look === 'paper' ? 'TERMINAL' : 'PAPER'}</span>
         </button>
         <button onClick={() => setHelpOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1">
           <span className="keycap">?</span>
@@ -119,6 +123,7 @@ export function HelpOverlay() {
   const rows = [
     ...DESKS.map((d) => [d.key.toUpperCase(), d.title]),
     ['1 / 2 / 3', 'RANGE: TODAY / 7D / 30D'],
+    ['T', 'SWITCH LOOK: PAPER / TERMINAL'],
     ['?', 'THIS CHEAT SHEET'],
     ['ESC', 'CLOSE'],
   ];

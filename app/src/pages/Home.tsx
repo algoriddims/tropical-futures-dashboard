@@ -37,7 +37,7 @@ export default function Home() {
         <DeskArea />
         <StatusBar />
         <HelpOverlay />
-        {/* CRT material stack */}
+        {/* CRT material stack — hidden by CSS in the paper look */}
         <div className="crt-scanlines" />
         <div className="crt-rgb" />
         <div className="crt-vignette" />
