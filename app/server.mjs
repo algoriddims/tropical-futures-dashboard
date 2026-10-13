@@ -115,8 +115,15 @@ const server = createServer(async (req, res) => {
       await sendFile(res, path, immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
       return;
     }
-    // Single-page app: unknown paths get the shell.
-    await sendFile(res, join(ROOT, 'index.html'), 'no-cache');
+    // Single-screen app with relative asset URLs (vite base './'): serving the
+    // shell at a sub-path would request /sub/assets/… and break, so send
+    // unknown paths home instead.
+    if (rel === '' || rel === '.') {
+      await sendFile(res, join(ROOT, 'index.html'), 'no-cache');
+      return;
+    }
+    res.writeHead(302, { ...SECURITY_HEADERS, Location: '/' });
+    res.end();
   } catch (err) {
     console.error(err);
     if (!res.headersSent) res.writeHead(500);
