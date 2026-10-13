@@ -3,6 +3,7 @@ import { DESKS, useTerminal } from './TerminalContext';
 import { ImportModal } from './ImportModal';
 import { daysUntil } from '@/game/engine';
 import { describeFreshness } from '@/game/freshness';
+import { nextLook } from './look';
 
 const RANGES = [
   { key: '1', label: 'TODAY', days: 1 },
@@ -66,7 +67,7 @@ export function TopBar() {
         </button>
         <button onClick={toggleLook} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="SWITCH LOOK (T)">
           <span className="keycap">T</span>
-          <span className="keycap-label font-display text-sm dim">{look === 'paper' ? 'TERMINAL' : 'PAPER'}</span>
+          <span className="keycap-label font-display text-sm dim">{nextLook(look).toUpperCase()}</span>
         </button>
         <button onClick={() => setHelpOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1">
           <span className="keycap">?</span>
@@ -123,7 +124,7 @@ export function HelpOverlay() {
   const rows = [
     ...DESKS.map((d) => [d.key.toUpperCase(), d.title]),
     ['1 / 2 / 3', 'RANGE: TODAY / 7D / 30D'],
-    ['T', 'SWITCH LOOK: PAPER / TERMINAL'],
+    ['T', 'SWITCH LOOK: PAPER / DARK / TERMINAL'],
     ['?', 'THIS CHEAT SHEET'],
     ['ESC', 'CLOSE'],
   ];

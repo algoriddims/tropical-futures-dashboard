@@ -12,7 +12,7 @@ import type { ManualSlices, ShelfEditStatus, ShelfField } from '@/game/overrides
 import { validateParkData } from '@/game/validate';
 import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
-import { loadLook, saveLook } from './look';
+import { loadLook, nextLook, saveLook } from './look';
 import type { Look } from './look';
 
 export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g';
@@ -188,7 +188,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const toggleLook = useCallback(() => {
     setLook((l) => {
-      const next = l === 'paper' ? 'terminal' : 'paper';
+      const next = nextLook(l);
       saveLook(next);
       return next;
     });
