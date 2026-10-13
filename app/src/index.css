@@ -1,4 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=Chakra+Petch:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+/* ABC Areal (Dinamo) — licensed font, self-hosted as the original WOFF2s.
+   See src/assets/fonts/README.md for what the license allows. */
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Regular.woff2') format('woff2');
+  font-weight: 300 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Medium.woff2') format('woff2');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Bold.woff2') format('woff2');
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
@@ -32,12 +56,12 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Chakra Petch', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'ABC Areal', Arial, Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
 }
 
 .font-display {
-  font-family: 'VT323', 'Chakra Petch', monospace;
+  font-family: 'VT323', 'ABC Areal', monospace;
   text-transform: uppercase;
 }
 
