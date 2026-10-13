@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "automationId": "tropical-futures-instagram-stats",
+  "runId": "2026-09-29T14:31:27.024Z",
+  "scheduledAt": "2026-09-29T14:31:27.024Z",
+  "checkedAt": "2026-09-29T14:32:47.9696373Z",
+  "timezone": "Europe/Berlin",
+  "accountHandle": "tropicalfutures",
+  "profileUrl": "https://www.instagram.com/tropicalfutures/",
+  "verifiedAccountId": null,
+  "outcome": "blocked",
+  "blockerCode": "instagram_analytics_connection_required",
+  "connectionCheck": {
+    "callableAnalyticsConnector": false,
+    "windsorInstalled": false,
+    "source": "Available tool inventory and plugin-directory installation status",
+    "availabilityChecksThisRun": 1
+  },
+  "publicProfileCheck": {
+    "attempted": true,
+    "outcome": "fetch_failed",
+    "directlyObservedCounts": false,
+    "reason": "Direct profile fetch returned a retrieval error; no counts were available."
+  },
+  "measurementWindow": null,
+  "metrics": [],
+  "metricsCollected": false,
+  "lastSuccessfulCollectionAt": null,
+  "notification": {
+    "decision": "suppressed_unchanged_blocker",
+    "blockerPreviouslyReportedAt": "2026-09-26T14:30:46Z",
+    "reason": "Authorized Instagram analytics access remains unavailable; the same requirement was already reported."
+  }
+}

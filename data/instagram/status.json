@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "accountHandle": "tropicalfutures",
+  "profileUrl": "https://www.instagram.com/tropicalfutures/",
+  "automationId": "tropical-futures-instagram-stats",
+  "scheduleStatus": "active",
+  "collectionStatus": "awaiting_authorized_connection",
+  "accessCheckedAt": "2026-10-11T14:35:37.1533588Z",
+  "lastSuccessfulCollectionAt": null,
+  "verifiedAccountId": null,
+  "metricsCollected": false,
+  "blockerCode": "instagram_analytics_connection_required",
+  "blockerReportedAt": "2026-09-26T14:30:46Z",
+  "detail": "Windsor.ai is still not installed, and no callable authorized Instagram analytics connector is available. A direct public-profile fetch failed; no metrics were observed. The existing access blocker is unchanged, so no repeat notification was issued.",
+  "lastRunId": "2026-10-11T14:34:58.794Z",
+  "lastRunRecord": "runs/2026-10-11T14-34-58-794Z.json",
+  "lastRunOutcome": "blocked"
+}
