@@ -102,11 +102,17 @@ export default function StatusDesk() {
             ) : (
               <div className="font-display text-sm dim">FIRST SYNC — BASELINE SET. DELTAS APPEAR ON THE NEXT IMPORT.</div>
             )}
+            {/* the notes themselves live in the import feed, not on the overview */}
             {data.meta?.notes && data.meta.notes.length > 0 && (
-              <div className="mt-2 space-y-0.5 border-t border-[var(--crt-mid)] pt-2 text-[0.74rem]">
-                <div className="font-display text-xs dim">DATA NOTES FROM THIS SYNC</div>
-                {data.meta.notes.map((n, i) => <div key={i} className="warm">· {n}</div>)}
-              </div>
+              <button
+                onClick={() => setDesk('f')}
+                className="mt-2 flex w-full items-center gap-2 border-t border-[var(--crt-mid)] pt-2 text-left text-[0.74rem] dim hover:text-[var(--vhs-white)]"
+              >
+                <span>
+                  {data.meta.notes.length} DATA NOTE{data.meta.notes.length === 1 ? '' : 'S'} FROM THIS SYNC — IN THE IMPORT FEED
+                </span>
+                <span className="keycap ml-auto">F</span>
+              </button>
             )}
           </div>
         </div>

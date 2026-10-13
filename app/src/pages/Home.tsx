@@ -9,6 +9,7 @@ import GoalsDesk from '@/desks/GoalsDesk';
 import OrdersDesk from '@/desks/OrdersDesk';
 import AdsDesk from '@/desks/AdsDesk';
 import NewsfeedDesk from '@/desks/NewsfeedDesk';
+import ImportFeedDesk from '@/desks/ImportFeedDesk';
 
 function DeskArea() {
   const { desk } = useTerminal();
@@ -23,6 +24,7 @@ function DeskArea() {
       {desk === 'o' && <OrdersDesk />}
       {desk === 'a' && <AdsDesk />}
       {desk === 'n' && <NewsfeedDesk />}
+      {desk === 'f' && <ImportFeedDesk />}
     </main>
   );
 }

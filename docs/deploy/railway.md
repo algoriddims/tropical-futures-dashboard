@@ -21,6 +21,8 @@ On Railway the server keeps **one shared snapshot** (the latest Shopify + bank s
 
 Still per browser: cost lines, planning inputs and shelf corrections you type in.
 
+**Import feed (F):** each upload's coverage, sources and data notes are listed on the IMPORTS desk, newest first, for every version the server still keeps (the current one plus 20). The overview only shows a one-line count that links there. The feed endpoint (`GET /api/snapshot/history`, same password) returns that metadata and record counts only, never the records.
+
 The snapshot must live on a **Railway volume** — container files are wiped on every redeploy.
 
 ## Steps

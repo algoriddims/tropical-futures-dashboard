@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchRemoteSnapshot, uploadSnapshot } from '../remote';
+import { fetchImportFeed, fetchRemoteSnapshot, uploadSnapshot } from '../remote';
 import { fixtureData } from '../fixtures';
 
 const res = (status: number, body: unknown, server = true) =>
@@ -51,5 +51,31 @@ describe('uploadSnapshot', () => {
   it('passes the server reason through on failure', async () => {
     expect(await uploadSnapshot({}, async () => res(500, { error: 'could not save the snapshot (EACCES)' })))
       .toEqual({ ok: false, error: 'could not save the snapshot (EACCES)' });
+  });
+});
+
+describe('fetchImportFeed', () => {
+  it('no snapshot server means no shared feed', async () => {
+    expect(await fetchImportFeed(async () => res(200, '<!doctype html>', false))).toEqual({ status: 'unavailable' });
+  });
+
+  it('reads entries newest first and keeps only well-formed fields', async () => {
+    const r = await fetchImportFeed(async () => res(200, {
+      entries: [
+        { savedAt: '2026-10-13T20:57:43Z', current: true, meta: { coverageEnd: '2026-10-13', sources: [{ label: 'SHOPIFY' }, { nope: 1 }], notes: ['a', 2, 'b'] }, counts: { products: 37, orders: 25, days: 60, accounts: 3 } },
+        { savedAt: '2026-10-12T10:00:00Z', meta: {} },
+        { meta: { notes: ['no savedAt — dropped'] } },
+      ],
+    }));
+    expect(r.status).toBe('ok');
+    if (r.status !== 'ok') return;
+    expect(r.entries).toHaveLength(2);
+    expect(r.entries[0]).toMatchObject({ current: true, sources: ['SHOPIFY'], notes: ['a', 'b'], counts: { products: 37 } });
+    expect(r.entries[1]).toMatchObject({ current: false, sources: [], notes: [] });
+  });
+
+  it('errors are surfaced, not shown as an empty feed', async () => {
+    expect(await fetchImportFeed(async () => res(401, { error: 'x' }))).toEqual({ status: 'error', message: 'server answered 401' });
+    expect((await fetchImportFeed(async () => res(200, { nope: 1 }))).status).toBe('error');
   });
 });

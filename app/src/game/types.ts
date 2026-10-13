@@ -153,7 +153,7 @@ export interface SnapshotMeta {
   coverageEnd?: string;    // last moment the snapshot's records cover
   extractedAt?: string;    // when the sync pulled the data from its sources
   sources?: { label: string; extractedAt?: string; coverageEnd?: string }[];
-  /** Plain-language data-quality notes from the sync (shown on the overview). */
+  /** Plain-language data-quality notes from the sync (shown in the import feed). */
   notes?: string[];
 }
 

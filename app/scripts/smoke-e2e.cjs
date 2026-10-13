@@ -21,7 +21,7 @@ const check = (name, ok, extra = '') => { results.push({ name, ok }); console.lo
 
 // Small, synthetic, valid snapshot. Coverage ends long ago on purpose.
 const snapshot = (soldAtTropa) => ({
-  meta: { coverageStart: '2026-09-01T00:00:00Z', coverageEnd: '2026-09-30T23:59:59Z', extractedAt: '2026-10-01T08:00:00Z' },
+  meta: { coverageStart: '2026-09-01T00:00:00Z', coverageEnd: '2026-09-30T23:59:59Z', extractedAt: '2026-10-01T08:00:00Z', notes: ['Smoke note one'] },
   products: [
     { id: 'a', name: 'TEST TEE', drop: 'T', price: 50, unitCost: 20, stock: 5, startInventory: 20, sold7d: 3, soldPrev7d: 2, soldTotal: 15, published: true },
     { id: 'b', name: 'LIMITED ZINE', drop: 'Z', price: 20, unitCost: 5, stock: 0, startInventory: 10, sold7d: 2, soldPrev7d: 1, soldTotal: 10, published: true, restockPolicy: 'LIMITED' },
@@ -61,7 +61,7 @@ const snapshot = (soldAtTropa) => ({
   // plain business language on every desk (theme-park vocabulary retired)
   const parkWords = /\b(PARK|RIDES?|GUESTS?|QUESTS?|SCENARIOS?|MECHANIC|BROKEN|CONSTRUCTION|MACHINES)\b/;
   const hits = [];
-  for (const k of ['s', 'p', 'g', 'i', 'l', 'c', 'o', 'a', 'n', '?']) {
+  for (const k of ['s', 'p', 'g', 'i', 'l', 'c', 'o', 'a', 'n', 'f', '?']) {
     await page.keyboard.press(k); await page.waitForTimeout(120);
     const m = (await body()).match(parkWords);
     if (m) hits.push(`${k}:${m[0]}`);
@@ -101,6 +101,11 @@ const snapshot = (soldAtTropa) => ({
   check('valid import renders snapshot', t.includes('SINCE LAST SYNC'));
   check('old coverage flagged even though just imported', t.includes('SYNC NEEDED') && /COVERAGE \d+D AGO/.test(t) && /IMPORTED \d+M AGO/.test(t));
   check('missing sessions/rates shown as unavailable', t.includes('NEEDS SESSIONS') && t.includes('NOT IN DATA'));
+  check('data notes stay off the overview (pointer to the feed only)', t.includes('1 DATA NOTE FROM THIS SYNC') && !t.includes('SMOKE NOTE ONE'));
+  await page.keyboard.press('f'); await page.waitForTimeout(150);
+  t = await body();
+  check('F opens the import feed with the sync notes', t.includes('IMPORT FEED') && t.includes('SMOKE NOTE ONE') && t.includes('CURRENT'));
+  await page.keyboard.press('s'); await page.waitForTimeout(150);
 
   await page.keyboard.press('i'); await page.waitForTimeout(150);
   t = await body();

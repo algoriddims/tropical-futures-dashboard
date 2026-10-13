@@ -17,6 +17,9 @@
 // Shared snapshot (behind the same password):
 //   GET /api/snapshot   → { savedAt, payload }, or { snapshot: null } before the first upload
 //   PUT /api/snapshot   ← a park-data.json body; becomes the shared snapshot
+//   GET /api/snapshot/history → { entries: [{ savedAt, current, meta, counts }] },
+//                       newest first: the import feed (data notes per upload,
+//                       no business records)
 // Every response carries X-TFI-Server: 1 so the app can tell it's talking to
 // this server (and not, say, a dev server that answers any path with HTML).
 // The app validates the full schema before uploading and again on load; the
@@ -179,6 +182,56 @@ async function handleSnapshot(req, res) {
   sendJson(res, 200, { savedAt });
 }
 
+// Import feed: one entry per kept version, newest first. Only the snapshot's
+// own meta (coverage, sources, data notes) and record counts — never the
+// records themselves. Strings are capped; anything malformed is skipped.
+const str = (v, max = 500) => (typeof v === 'string' ? v.slice(0, max) : undefined);
+function summarize(raw, current) {
+  const { savedAt, payload } = JSON.parse(raw);
+  if (typeof savedAt !== 'string' || !payload || typeof payload !== 'object') return null;
+  const m = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+  const len = (k) => (Array.isArray(payload[k]) ? payload[k].length : 0);
+  return {
+    savedAt,
+    current,
+    meta: {
+      coverageStart: str(m.coverageStart, 40),
+      coverageEnd: str(m.coverageEnd, 40),
+      extractedAt: str(m.extractedAt, 40),
+      sources: Array.isArray(m.sources)
+        ? m.sources.slice(0, 20).filter((x) => x && typeof x.label === 'string')
+            .map((x) => ({ label: str(x.label, 80), extractedAt: str(x.extractedAt, 40), coverageEnd: str(x.coverageEnd, 40) }))
+        : [],
+      notes: Array.isArray(m.notes) ? m.notes.slice(0, 100).filter((n) => typeof n === 'string').map((n) => str(n)) : [],
+    },
+    counts: { products: len('products'), orders: len('orders'), days: len('days'), accounts: len('accounts') },
+  };
+}
+
+async function handleHistory(req, res) {
+  if (req.method !== 'GET') {
+    res.writeHead(405, { ...SECURITY_HEADERS, Allow: 'GET' });
+    res.end();
+    return;
+  }
+  let files = [];
+  try {
+    files = (await readdir(SNAPSHOT_DIR)).filter((f) => /^snapshot-\d+\.json$/.test(f)).sort().reverse();
+  } catch (e) {
+    if (e.code !== 'ENOENT') { console.error(e); sendJson(res, 500, { error: 'could not read the snapshot store' }); return; }
+  }
+  const entries = [];
+  for (const [f, current] of [['snapshot.json', true], ...files.map((f) => [f, false])]) {
+    try {
+      const e = summarize(await readFile(join(SNAPSHOT_DIR, f), 'utf8'), current);
+      if (e) entries.push(e);
+    } catch (e) {
+      if (e.code !== 'ENOENT') console.error(`import feed: skipped ${f}: ${e.message}`);
+    }
+  }
+  sendJson(res, 200, { entries });
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', 'http://local');
@@ -187,12 +240,13 @@ const server = createServer(async (req, res) => {
       res.end('ok');
       return;
     }
-    if (url.pathname === '/api/snapshot') {
+    if (url.pathname === '/api/snapshot' || url.pathname === '/api/snapshot/history') {
       if (!authorized(req)) {
         sendJson(res, 401, { error: 'authentication required' });
         return;
       }
-      await handleSnapshot(req, res);
+      if (url.pathname === '/api/snapshot') await handleSnapshot(req, res);
+      else await handleHistory(req, res);
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {

@@ -38,14 +38,14 @@ export function TopBar() {
       <div className="flex items-center gap-2 px-3 py-1.5 border-r border-[var(--crt-mid)]">
         <Palm />
         <span className="font-display text-xl phosphor crt-flicker tracking-wide">TROPICAL FUTURES</span>
-        <span className="font-display text-xl tropic-pink">TERMINAL</span>
+        <span className="hidden 2xl:inline font-display text-xl tropic-pink">TERMINAL</span>
       </div>
       <nav className="flex items-center gap-1 px-2 overflow-x-auto">
         {DESKS.map((d) => (
           <button
             key={d.key}
             onClick={() => setDesk(d.key)}
-            className="keycap-btn flex items-center gap-1.5 px-2 py-1"
+            className="keycap-btn flex shrink-0 items-center gap-1 px-1.5 py-1"
           >
             <span className={`keycap ${desk === d.key ? 'keycap-active' : ''}`}>{d.key.toUpperCase()}</span>
             <span className={`keycap-label font-display text-base ${desk === d.key ? 'text-[var(--vhs-white)]' : 'dim'}`}>

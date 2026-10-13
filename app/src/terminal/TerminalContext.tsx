@@ -16,7 +16,7 @@ import type { SyncDelta } from '@/game/engine';
 import { loadLook, nextLook, saveLook } from './look';
 import type { Look } from './look';
 
-export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g';
+export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g' | 'f';
 
 export const DESKS: { key: DeskKey; label: string; title: string }[] = [
   { key: 's', label: 'STATUS', title: 'OVERVIEW' },
@@ -28,6 +28,7 @@ export const DESKS: { key: DeskKey; label: string; title: string }[] = [
   { key: 'o', label: 'ORDERS', title: 'ORDERS / CASH' },
   { key: 'a', label: 'ADS', title: 'AD CAMPAIGNS' },
   { key: 'n', label: 'ALERTS', title: 'ALERTS' },
+  { key: 'f', label: 'IMPORTS', title: 'IMPORT FEED' },
 ];
 
 export interface LiveEvent {
