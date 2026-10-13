@@ -6,18 +6,21 @@ import { useTerminal } from './TerminalContext';
 // before any server exists. Manual slices and shelf edits survive the import.
 // Mounted only while open, so each opening starts from a clean state.
 export function ImportModal({ onClose }: { onClose: () => void }) {
-  const { importData, clearImport, imported, exportStored } = useTerminal();
+  const { importData, clearImport, imported, exportStored, shared, sharedError, reloadShared } = useTerminal();
   const [raw, setRaw] = useState('');
   const [errors, setErrors] = useState<string[] | null>(null);
   const [ok, setOk] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const doImport = () => {
-    const errs = importData(raw);
+  const doImport = async () => {
+    setBusy(true);
+    const errs = await importData(raw);
+    setBusy(false);
     setErrors(errs);
     if (!errs) {
       setRaw('');
       setOk(true);
-      window.setTimeout(onClose, 600);
+      window.setTimeout(onClose, 900);
     }
   };
 
@@ -43,8 +46,22 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
           <p className="text-[0.75rem] leading-relaxed dim">
             PASTE THE CONTENTS OF <span className="warm">park-data.json</span> FROM THE DAILY SYNC.
             THE WHOLE FILE IS CHECKED FIRST — IF ANYTHING IS MISSING OR MALFORMED, NOTHING CHANGES.
-            YOUR MANUAL ENTRIES — BANK BALANCE, COST LINES, PLANNING INPUTS, SHELF CORRECTIONS — ARE PRESERVED.
+            YOUR MANUAL ENTRIES — COST LINES, PLANNING INPUTS, SHELF CORRECTIONS — ARE PRESERVED.
           </p>
+          <p className="text-[0.75rem] leading-relaxed">
+            {shared === 'server' ? (
+              <span className="tier-green">SHARED: THIS UPLOADS TO YOUR SERVER, SO EVERY DEVICE YOU SIGN IN FROM SEES IT. MANUAL ENTRIES STAY IN EACH BROWSER.</span>
+            ) : shared === 'local' ? (
+              <span className="tier-amber">THIS BROWSER ONLY: NO SHARED STORE HERE (LOCAL DEV OR PREVIEW). OTHER DEVICES NEED THEIR OWN IMPORT.</span>
+            ) : (
+              <span className="dim">CHECKING FOR A SHARED STORE…</span>
+            )}
+          </p>
+          {sharedError && (
+            <div className="max-h-24 overflow-y-auto font-display text-sm tier-amber" role="status">
+              {sharedError.map((e, i) => <div key={i}>◆ {e}</div>)}
+            </div>
+          )}
           <textarea
             autoFocus
             value={raw}
@@ -59,13 +76,18 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
               {errors.map((e, i) => <div key={i}>▲ {e}</div>)}
             </div>
           )}
-          {ok && <div className="font-display text-sm tier-green">✓ SYNC DATA LOADED</div>}
+          {ok && <div className="font-display text-sm tier-green">✓ {shared === 'server' ? 'UPLOADED — ALL YOUR DEVICES WILL LOAD THIS' : 'SYNC DATA LOADED IN THIS BROWSER'}</div>}
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
               <button onClick={doExport} className="keycap-btn px-2 py-1 font-display text-sm dim" title="DOWNLOAD EVERYTHING STORED IN THIS BROWSER">
                 EXPORT BACKUP
               </button>
-              {imported && (
+              {shared === 'server' && (
+                <button onClick={() => { void reloadShared(); }} className="keycap-btn px-2 py-1 font-display text-sm dim" title="FETCH THE LATEST SHARED DATA">
+                  RELOAD SHARED
+                </button>
+              )}
+              {imported && shared !== 'server' && (
                 <button
                   onClick={() => {
                     if (!window.confirm('Remove the imported snapshot from this browser? Export a backup first if you may need it.')) return;
@@ -81,11 +103,11 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
             <div className="flex gap-2">
               <button onClick={onClose} className="keycap-btn px-2 py-1 font-display text-sm dim">CANCEL</button>
               <button
-                onClick={doImport}
-                disabled={!raw.trim()}
+                onClick={() => { void doImport(); }}
+                disabled={!raw.trim() || busy || shared === 'checking'}
                 className="keycap-btn px-3 py-1 font-display text-sm phosphor disabled:opacity-40"
               >
-                IMPORT
+                {busy ? 'UPLOADING…' : shared === 'server' ? 'UPLOAD' : 'IMPORT'}
               </button>
             </div>
           </div>

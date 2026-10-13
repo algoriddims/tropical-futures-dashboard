@@ -26,7 +26,7 @@ Not available from Shopify: ad spend (Meta), bank cash (ERA), stockist/consignme
    npx vite-node scripts/shopify-snapshot.ts ../data/private/shopify-extract-YYYY-MM-DD.json ../data/private/park-data-YYYY-MM-DD.json
    ```
    The converter (`buildShopifySnapshot`, tested in `src/game/__tests__/shopify.test.ts`) checks that each product's variant stock adds up to Shopify's own total (catches copying mistakes), refuses non-USD shops, validates the result against the full import schema, and prints its data notes.
-3. **Import.** Open the dashboard → IMPORT → paste the file contents. Bank balance, costs and planning inputs you've entered are kept: the file deliberately omits them.
+3. **Import / upload.** Open the dashboard → IMPORT → paste the file contents. On the hosted (Railway) site the button says UPLOAD and the snapshot is shared with every device; locally it stays in that browser. Costs and planning inputs you've entered are kept: the file deliberately omits them.
 
 To repeat it, open a Claude Code session on this repo with the Shopify connector enabled and say: *"Run the Shopify sync in docs/data/shopify-sync.md."*
 

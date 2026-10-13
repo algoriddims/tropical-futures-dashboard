@@ -79,7 +79,7 @@ export function TopBar() {
 }
 
 export function StatusBar() {
-  const { data, metrics, desk, sourceName, notices, imported, importedAt } = useTerminal();
+  const { data, metrics, desk, sourceName, notices, imported, importedAt, shared } = useTerminal();
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
@@ -111,6 +111,7 @@ export function StatusBar() {
             {f.label} {f.text}
           </span>
         ))}
+        {shared === 'server' && <span className="dim" title="DATA COMES FROM YOUR SERVER, SHARED ACROSS DEVICES">SHARED</span>}
         <span className={`badge ${badgeCls}`}>{badgeText}</span>
         <span className="warm">{now.toLocaleTimeString('en-GB')}</span>
       </span>

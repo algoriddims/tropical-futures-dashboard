@@ -22,7 +22,7 @@ ERA also shows personal checking, personal cards and brokerage accounts. They ar
    npx vite-node scripts/shopify-snapshot.ts ../data/private/shopify-extract-DATE.json ../data/private/park-data-DATE.json ../data/private/era-extract-DATE.json
    ```
    The converter checks every account-month of copied spending against ERA's own monthly totals (to the cent) and refuses unapproved accounts.
-3. **Import** the resulting file in the dashboard.
+3. **Upload** the resulting file in the dashboard (IMPORT → UPLOAD on the hosted site, shared with every device).
 
 To repeat it, say in a Claude session on this repo with ERA and Shopify connected: *"Run the Shopify and ERA syncs in docs/data/."*
 

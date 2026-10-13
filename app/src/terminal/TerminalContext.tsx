@@ -10,6 +10,7 @@ import {
 } from '@/game/overrides';
 import type { ManualSlices, ShelfEditStatus, ShelfField } from '@/game/overrides';
 import { validateParkData } from '@/game/validate';
+import { fetchRemoteSnapshot, uploadSnapshot } from '@/game/remote';
 import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
 import { loadLook, nextLook, saveLook } from './look';
@@ -68,8 +69,17 @@ interface TerminalState {
   storedSnapshotErrors: string[] | null;
   /** Delta vs the previous sync (null on first import / fixture data). */
   delta: SyncDelta | null;
-  /** Paste a full park-data.json; returns error lines, or null on success. */
-  importData: (raw: string) => string[] | null;
+  /**
+   * Where imports go: 'server' = the shared snapshot on the hosting server
+   * (every device sees it); 'local' = this browser only; 'checking' = not yet known.
+   */
+  shared: 'checking' | 'server' | 'local';
+  /** Problem with the shared snapshot (unreadable or failed validation), if any. */
+  sharedError: string[] | null;
+  /** Re-fetch the shared snapshot from the server. */
+  reloadShared: () => Promise<void>;
+  /** Paste a full park-data.json; resolves to error lines, or null on success. Uploads when shared. */
+  importData: (raw: string) => Promise<string[] | null>;
   /** Drop the imported snapshot and return to sample data. */
   clearImport: () => void;
   /** JSON of everything stored in this browser, for backup before clearing/re-importing. */
@@ -104,7 +114,40 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [importedAt, setImportedAt] = useState<string | null>(null);
   const [storedSnapshotErrors, setStoredSnapshotErrors] = useState<string[] | null>(null);
   const [delta, setDelta] = useState<SyncDelta | null>(null);
+  const [shared, setShared] = useState<'checking' | 'server' | 'local'>('checking');
+  const [sharedError, setSharedError] = useState<string[] | null>(null);
   const idRef = useRef(0);
+
+  // Show a snapshot and cache it in this browser (so it still opens offline).
+  const showSnapshot = useCallback((payload: ParkData, savedAt: string) => {
+    const prev = loadImported();
+    persistImported(payload, savedAt ? new Date(savedAt) : new Date());
+    setImported(true);
+    setImportedAt(savedAt || null);
+    setStoredSnapshotErrors(null);
+    setDelta(prev?.status === 'ok' && prev.savedAt !== savedAt ? diffSnapshots(prev.payload, payload) : null);
+    setLiveEvents([]);
+    setBase(payload);
+  }, []);
+
+  const reloadShared = useCallback(async () => {
+    const r = await fetchRemoteSnapshot();
+    if (r.status === 'unavailable') { setShared('local'); return; }
+    setShared('server');
+    if (r.status === 'ok') {
+      setSharedError(null);
+      // Unchanged since last time: keep the current view (and its delta).
+      const cached = loadImported();
+      if (r.savedAt && cached?.status === 'ok' && cached.savedAt === r.savedAt) return;
+      showSnapshot(r.payload, r.savedAt);
+    } else if (r.status === 'invalid') {
+      setSharedError(['THE SHARED SNAPSHOT FAILED VALIDATION — SHOWING THIS BROWSER\'S LAST GOOD DATA', ...r.errors]);
+    } else if (r.status === 'error') {
+      setSharedError([`COULD NOT LOAD THE SHARED SNAPSHOT: ${r.message.toUpperCase()}`]);
+    } else {
+      setSharedError(null); // empty: nothing uploaded yet
+    }
+  }, [showSnapshot]);
 
   useEffect(() => {
     source.load().then((sample) => {
@@ -120,8 +163,10 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
         setStoredSnapshotErrors(imp?.status === 'invalid' ? imp.errors : null);
         setBase(sample);
       }
+      // then check for a shared snapshot on the server
+      void reloadShared();
     });
-  }, []);
+  }, [reloadShared]);
 
   const { data, shelfStatus } = useMemo(() => {
     if (!base) return { data: null, shelfStatus: [] as ShelfEditStatus[] };
@@ -151,7 +196,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     commitManual({ ...manual, shelfEdits: keep === 'sync' ? discardShelfEdit(edits, key) : rebaseShelfEdit(edits, base, key) });
   }, [base, manual, commitManual]);
 
-  const importData = useCallback((raw: string): string[] | null => {
+  const importData = useCallback(async (raw: string): Promise<string[] | null> => {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
@@ -160,6 +205,14 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     }
     const v = validateParkData(parsed);
     if (!v.ok) return ['NOT IMPORTED — THE CURRENT DATA IS UNCHANGED', ...v.errors];
+    if (shared === 'server') {
+      // Upload the file as sent (unknown extra fields included); the server copy is what every device loads.
+      const up = await uploadSnapshot(parsed);
+      if (!up.ok) return [`NOT UPLOADED — THE SHARED DATA IS UNCHANGED: ${up.error.toUpperCase()}`];
+      setSharedError(null);
+      showSnapshot(v.data, up.savedAt);
+      return null;
+    }
     const prev = loadImported();
     const savedAt = persistImported(v.data);
     if (savedAt === null) {
@@ -172,7 +225,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setLiveEvents([]);
     setBase(v.data);
     return null;
-  }, []);
+  }, [shared, showSnapshot]);
 
   const clearImport = useCallback(() => {
     clearImported();
@@ -244,7 +297,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     helpOpen, setHelpOpen, look, toggleLook, liveEvents,
     sourceName: imported ? 'IMPORTED SYNC' : source.name,
     updateData, editShelf, resolveShelfEdit, shelfStatus, storageOk,
-    imported, importedAt, storedSnapshotErrors, delta, importData, clearImport, exportStored,
+    imported, importedAt, storedSnapshotErrors, delta, shared, sharedError, reloadShared, importData, clearImport, exportStored,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

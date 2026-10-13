@@ -9,10 +9,13 @@ Status, 13 October 2026: deploy files are in place and checked locally (server b
 - Only the built app (`dist/`) is served. Docs, the brand reference and the PRD are not in the image.
 - `GET /healthz` returns `ok` without auth, for health checks.
 
-## What hosting does *not* change
+## Shared data across devices
 
-- **Data stays in each browser.** Imports, bank balance, costs and shelf corrections live in that browser's localStorage. Your laptop and phone will not share data. Each browser needs its own import, and clearing site data erases them. Use EXPORT BACKUP. Moving data server-side is the "persistent storage" milestone.
-- No accounts are connected. It is the same app as `npm run dev`, behind a password.
+On Railway the server keeps **one shared snapshot** (the latest Shopify + bank sync) behind the same password. Every device that signs in loads it automatically — no per-browser import. Uploading from the IMPORT dialog (it says UPLOAD on the hosted site) replaces it for everyone; the previous 20 versions are kept on the server for recovery.
+
+Still per browser: cost lines, planning inputs and shelf corrections you type in.
+
+The snapshot must live on a **Railway volume** — container files are wiped on every redeploy.
 
 ## Steps
 
@@ -23,15 +26,28 @@ Status, 13 October 2026: deploy files are in place and checked locally (server b
    - Optional **Healthcheck Path:** `/healthz`.
 3. Under **Variables**, add:
    - `DASHBOARD_PASSWORD` — at least 12 characters, ideally a generated passphrase. Store it in your password manager.
+   - `SNAPSHOT_DIR` = `/data`
    - Optional `DASHBOARD_USER` — also require a specific username.
    - Do not set `PORT`; Railway provides it.
-4. Under **Networking**, generate a domain. Railway serves it over HTTPS, which Basic auth needs.
-5. Open the URL. The browser asks for a username/password: any username unless `DASHBOARD_USER` is set, plus your password.
+4. **Add a volume** to the service (right-click the service or use the command palette → *Volume*) and mount it at **`/data`**.
+   - The image runs as a non-root user. If the deploy log says `Shared snapshot store /data is not writable (EACCES)`, add the variable `RAILWAY_RUN_UID` = `0` (Railway's documented fix for volume permissions) and redeploy. *Not verified here — the log line tells you whether it's needed.*
+5. Under **Networking**, generate a domain. Railway serves it over HTTPS, which Basic auth needs.
+6. Open the URL. The browser asks for a username/password: any username unless `DASHBOARD_USER` is set, plus your password.
 
-If the deploy logs say `Refusing to start: set DASHBOARD_PASSWORD`, step 3 is missing. That's intended.
+7. Open IMPORT → paste the latest `park-data.json` → **UPLOAD**. Every device now loads it.
+
+If the deploy logs say `Refusing to start: set DASHBOARD_PASSWORD`, step 3 is missing. That's intended. If they warn `SNAPSHOT_DIR not set`, uploads work but vanish on the next deploy — do step 4.
+
+### Uploading from the command line
+
+```bash
+curl -u any:YOUR_PASSWORD -X PUT -H 'Content-Type: application/json' \
+  --data-binary @park-data.json https://YOUR-APP.up.railway.app/api/snapshot
+```
 
 ## Notes
 
+- The snapshot API is behind the same password; uploads from other websites are refused, bodies over 5 MB are rejected, and the app re-validates everything it loads.
 - Basic auth is a single shared gate, enough for a solo private tool. It is not per-user accounts and has no lockout after failed attempts. Use a long password.
 - The browser remembers the credentials for the session. Log out by closing the browser or clearing site data.
 - Cost: Railway bills by usage. A small static server like this should be cheap, but check current Railway pricing — not verified here.

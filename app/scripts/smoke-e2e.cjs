@@ -41,10 +41,17 @@ const snapshot = (soldAtTropa) => ({
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('console', (m) => { if (m.type() === 'error' && !(probe404 && /404/.test(m.text()))) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   const body = async () => (await page.locator('body').innerText()).toUpperCase();
-  page.on('response', (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
+  // The app probes /api/snapshot once to find a shared store; without the
+  // hosting server (vite preview) that 404 is expected and means "local mode".
+  const probe = (u) => /\/api\/snapshot$/.test(u);
+  let probe404 = false;
+  page.on('response', (r) => {
+    if (r.status() === 404 && probe(r.url())) { probe404 = true; return; }
+    if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`);
+  });
 
   await page.goto(URL);
   await page.waitForSelector('text=BANK BALANCE');

@@ -28,4 +28,6 @@ Inspect the relevant code and establish a baseline before changing it. Apply a s
 
 Within `app`, commands are `npm run build`, `npm run lint`, `npm run dev` and `npm test` (Vitest regression checks in `src/game/__tests__/`). A browser smoke check lives in `app/scripts/smoke-e2e.cjs` (needs Playwright, see its header). Lint has 11 known errors that predate milestone 1; don't add new ones. Add targeted regression checks with each behavior change. Dependencies are not bundled in this checkout. This is its own Git repository (`algoriddims/tropical-futures-dashboard`). Still verify the repository root before Git operations and never stage unrelated user files.
 
+Data layers: Shopify ([docs/data/shopify-sync.md](docs/data/shopify-sync.md)) and ERA business bank/card ([docs/data/era-sync.md](docs/data/era-sync.md)), built into one snapshot by `app/scripts/shopify-snapshot.ts`. Real data lives only in `data/private/` (gitignored) and, when hosted, in the server's shared snapshot (`/api/snapshot`, see [docs/deploy/railway.md](docs/deploy/railway.md)). Never commit real data.
+
 Milestone 1 (reliable local prototype) is recorded in [docs/solutions/2026-10-13-reliable-local-prototype.md](docs/solutions/2026-10-13-reliable-local-prototype.md), including the optional import-format fields (`meta`, `sessions`, `restockPolicy`) and known limitations.
