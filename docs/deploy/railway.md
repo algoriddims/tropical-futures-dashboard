@@ -1,6 +1,12 @@
 # Deploying to Railway
 
-Status, 13 October 2026: deploy files are in place and checked locally (server behavior, plus a by-hand replay of the Dockerfile steps). **No Railway deploy has been run yet**, and the Docker image itself has not been built: the preparing session had no Docker daemon or Railway access. Railway's UI labels below are from memory and may differ slightly.
+Status, 13 October 2026: **deployed and in use.** The service builds from `app/Dockerfile` on Railway (region asia-southeast1, deployed from the `claude/dazzling-hopper-6ua9gf` branch). These were confirmed from Railway's deploy and HTTP logs:
+- the server refused to start until `DASHBOARD_PASSWORD` was set;
+- unauthenticated requests get 401;
+- the volume at `/data` is writable with `RAILWAY_RUN_UID=0`;
+- the first real snapshot upload (`PUT /api/snapshot`) returned 200, and a later page load served it back.
+
+Railway's UI labels below are from memory and may differ slightly.
 
 ## What gets deployed
 
