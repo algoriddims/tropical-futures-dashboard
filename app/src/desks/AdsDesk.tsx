@@ -34,7 +34,7 @@ export default function AdsDesk() {
 
       <div className="panel overflow-x-auto">
         <div className="panel-head">
-          <span>CAMPAIGN MACHINES</span>
+          <span>CAMPAIGNS</span>
           <span className="dim">META ADS · {data.campaigns.length} CAMPAIGNS</span>
         </div>
         <table className="w-full text-[0.78rem]">
@@ -87,7 +87,7 @@ export default function AdsDesk() {
       </div>
 
       <div className="panel">
-        <div className="panel-head"><span>MECHANIC'S RECOMMENDATIONS</span></div>
+        <div className="panel-head"><span>RECOMMENDATIONS</span></div>
         <div className="p-2">
           {data.campaigns.map((c) => {
             const v = campaignVerdict(c, metrics.breakEvenRoas, data.targetRoas);
@@ -96,10 +96,10 @@ export default function AdsDesk() {
               <div key={c.id} className="tape-row">
                 <span className={`tier-${v.tier} shrink-0`}>{v.tier === 'red' ? '▲' : v.tier === 'amber' ? '◆' : '●'}</span>
                 <span className="warm">
-                  {v.label === 'MONEY PIT' && `${c.name}: below break-even (${roas.toFixed(2)} vs ${metrics.breakEvenRoas.toFixed(2)}). Cut budget or swap creative before tomorrow's spend.`}
-                  {v.label === 'SCALE ME' && `${c.name}: ROAS ${roas.toFixed(2)} above target. Consider +15–20% budget steps while frequency is low.`}
-                  {v.label === 'HOLD' && `${c.name}: ROAS ${roas.toFixed(2)} — profitable but under target. Test one new hook before scaling.`}
-                  {v.label === 'IDLE' && `${c.name}: paused. Decide — relaunch for the next drop or archive it.`}
+                  {v.label === 'BELOW BREAK-EVEN' && `${c.name}: below break-even (${roas.toFixed(2)} vs ${metrics.breakEvenRoas.toFixed(2)}). Cut budget or swap creative before tomorrow's spend.`}
+                  {v.label === 'ABOVE TARGET' && `${c.name}: ROAS ${roas.toFixed(2)} above target. Consider +15–20% budget steps while frequency is low.`}
+                  {v.label === 'UNDER TARGET' && `${c.name}: ROAS ${roas.toFixed(2)} — profitable but under target. Test one new hook before scaling.`}
+                  {v.label === 'PAUSED' && `${c.name}: paused. Decide — relaunch for the next drop or archive it.`}
                 </span>
               </div>
             );

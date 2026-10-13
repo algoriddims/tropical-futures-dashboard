@@ -44,7 +44,7 @@ export default function GoalsDesk() {
             <div>
               <div className="font-display text-sm dim">CURRENT PIPELINE</div>
               <div className="font-display text-3xl text-[var(--vhs-white)]">${plan.currentRetail.toLocaleString()}</div>
-              <div className="text-[0.68rem] dim">RETAIL VALUE IN CONSTRUCTION</div>
+              <div className="text-[0.68rem] dim">RETAIL VALUE IN PRODUCTION</div>
             </div>
             <div>
               <div className="font-display text-sm dim">NEXT RUN TARGET</div>
@@ -144,9 +144,9 @@ export default function GoalsDesk() {
           </div>
         </div>
 
-        {/* scenarios moved into the planning context */}
+        {/* goals live in the planning context */}
         <div className="window">
-          <div className="window-head"><span className="wh-title">ACTIVE SCENARIOS</span></div>
+          <div className="window-head"><span className="wh-title">GOALS</span></div>
           <div className="window-body space-y-2">
             {data.quests.map((q) => {
               const pct = Math.min(100, (q.current / q.target) * 100);
@@ -155,7 +155,7 @@ export default function GoalsDesk() {
                 <div key={q.id}>
                   <div className="flex justify-between font-display text-sm">
                     <span className={done ? 'tier-green' : 'warm'}>{q.goal}</span>
-                    <span className="dim">{done ? '★ WON' : `${Math.round(pct)}% · ${q.daysLeft}D`}</span>
+                    <span className="dim">{done ? '✓ DONE' : `${Math.round(pct)}% · ${q.daysLeft}D`}</span>
                   </div>
                   <Bar pct={pct} color={done ? 'var(--palm)' : 'var(--sun)'} />
                 </div>
@@ -168,7 +168,7 @@ export default function GoalsDesk() {
       {/* cross-data insights feed */}
       <div className="window">
         <div className="window-head">
-          <span className="wh-title">PARK INSIGHTS</span>
+          <span className="wh-title">INSIGHTS</span>
           <span className="dim text-sm">READ ACROSS COSTS · PIPELINE · STOCKISTS · ADS · FORECAST</span>
         </div>
         <div>
@@ -180,7 +180,7 @@ export default function GoalsDesk() {
             </div>
           ))}
           {insights.length === 0 && (
-            <div className="px-3 py-2 text-[0.72rem] dim">NOTHING TO SAY — THE PARK IS QUIET.</div>
+            <div className="px-3 py-2 text-[0.72rem] dim">NOTHING TO FLAG.</div>
           )}
         </div>
       </div>

@@ -47,11 +47,21 @@ const snapshot = (soldAtTropa) => ({
   page.on('response', (r) => { if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url()}`); });
 
   await page.goto(URL);
-  await page.waitForSelector('text=PARK CASH');
+  await page.waitForSelector('text=BANK BALANCE');
   let t = await body();
   check('sample banner shown', t.includes('SAMPLE DATA — INVENTED NUMBERS'));
   check('status bar says sample / not live (no fake SHOPIFY 2m)', t.includes('NOT LIVE') && !/SHOPIFY 2m/.test(t));
-  check('ticker labelled fictional', t.includes('FICTIONAL GUEST VOICES'));
+  // plain business language on every desk (theme-park vocabulary retired)
+  const parkWords = /\b(PARK|RIDES?|GUESTS?|QUESTS?|SCENARIOS?|MECHANIC|BROKEN|CONSTRUCTION|MACHINES)\b/;
+  const hits = [];
+  for (const k of ['s', 'p', 'g', 'i', 'l', 'c', 'o', 'a', 'n', '?']) {
+    await page.keyboard.press(k); await page.waitForTimeout(120);
+    const m = (await body()).match(parkWords);
+    if (m) hits.push(`${k}:${m[0]}`);
+    if (k === '?') await page.keyboard.press('Escape');
+  }
+  check('no theme-park vocabulary on any desk', hits.length === 0, hits.join(' '));
+  await page.keyboard.press('s'); await page.waitForTimeout(120);
 
   // keyboard navigation
   await page.keyboard.press('l'); await page.waitForTimeout(150);
@@ -97,7 +107,7 @@ const snapshot = (soldAtTropa) => ({
   await page.keyboard.press('Enter');
   await page.waitForTimeout(150);
   await page.reload();
-  await page.waitForSelector('text=PARK CASH');
+  await page.waitForSelector('text=BANK BALANCE');
   await page.keyboard.press('l'); await page.waitForTimeout(150);
   const soldCell = await page.locator('button[title="CORRECT UNITS SOLD"]').first().innerText();
   check('shelf correction survives reload', soldCell.trim() === '7', `cell=${soldCell}`);

@@ -117,7 +117,7 @@ export default function StatusDesk() {
             </span>
             <span className="font-display text-xl warm">{data.nextDrop.name}</span>
             <span className="dim text-[0.74rem]">
-              {readyBuilds > 0 ? `${readyBuilds} BUILD${readyBuilds > 1 ? 'S' : ''} READY · $${dropRetail.toLocaleString()} EXPECTED` : 'NO BUILDS READY — CHECK CONSTRUCTION'}
+              {readyBuilds > 0 ? `${readyBuilds} RUN${readyBuilds > 1 ? 'S' : ''} READY · $${dropRetail.toLocaleString()} EXPECTED` : 'NO RUNS READY — CHECK THE PIPELINE'}
             </span>
             <span className="keycap ml-auto">G</span>
           </div>
@@ -126,7 +126,7 @@ export default function StatusDesk() {
 
       {/* headline strip */}
       <div className="grid grid-cols-3 gap-2">
-        <Window title="PARK CASH" right="BANK ACCOUNT · CLICK TO SET">
+        <Window title="BANK BALANCE" right="BANK ACCOUNT · CLICK TO SET">
           <div className="flex items-end justify-between">
             <div>
               <InlineNumber
@@ -165,7 +165,7 @@ export default function StatusDesk() {
           </div>
         </Window>
 
-        <Window title="AD MACHINES" right={<button onClick={(e) => { e.stopPropagation(); setDesk('a'); }} className="keycap">A</button>}>
+        <Window title="ADS" right={<button onClick={(e) => { e.stopPropagation(); setDesk('a'); }} className="keycap">A</button>}>
           <div className="flex items-end justify-between">
             <BigStat label="META SPEND" value={`$${metrics.spend.toLocaleString()}`} tone="tier-red" />
             <div className="text-right">
@@ -180,7 +180,7 @@ export default function StatusDesk() {
 
       <div className="grid grid-cols-3 gap-2">
         {/* inventory */}
-        <Window title="RIDES ON THE FLOOR" right={<button onClick={(e) => { e.stopPropagation(); setDesk('i'); }} className="keycap">I</button>}>
+        <Window title="INVENTORY" right={<button onClick={(e) => { e.stopPropagation(); setDesk('i'); }} className="keycap">I</button>}>
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="UNITS IN STOCK" value={metrics.inventoryUnits.toLocaleString()} />
             <BigStat label="SELL-THROUGH" value={`${Math.round(metrics.overallSellThrough * 100)}%`} tone="palm" />
@@ -193,7 +193,7 @@ export default function StatusDesk() {
         </Window>
 
         {/* guests */}
-        <Window title="GUESTS">
+        <Window title="TRAFFIC">
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="SESSIONS" value={metrics.guests !== null ? metrics.guests.toLocaleString() : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
             <BigStat label="CONVERSION" value={metrics.conversionRate !== null ? `${metrics.conversionRate.toFixed(1)}%` : '—'} tone="tropic-pink" sub={metrics.conversionRate === null ? 'NEEDS SESSIONS' : undefined} />
@@ -203,9 +203,9 @@ export default function StatusDesk() {
         </Window>
 
         {/* top moves */}
-        <Window title="TOP MOVES" right={`RATING ${metrics.rating} · ${metrics.ratingBand}`}>
+        <Window title="TOP MOVES" right={`SCORE ${metrics.rating} · ${metrics.ratingBand}`}>
           {moves.length === 0 ? (
-            <div className="font-display text-sm dim">PARK RUNNING CLEAN — NO MOVES ABOVE THRESHOLD.</div>
+            <div className="font-display text-sm dim">NOTHING URGENT RIGHT NOW.</div>
           ) : (
             <div className="space-y-1.5">
               {moves.map((mv, i) => (
@@ -232,13 +232,13 @@ export default function StatusDesk() {
       <div className="grid grid-cols-3 gap-2">
         {/* pipeline */}
         <Window
-          title="RIDES UNDER CONSTRUCTION"
+          title="PRODUCTION PIPELINE"
           right={<button onClick={(e) => { e.stopPropagation(); setDesk('p'); }} className="keycap">P</button>}
           onClick={() => setDesk('p')}
         >
           <div className="flex items-end justify-between">
-            <BigStat label="BUILDS IN PROGRESS" value={String(data.pipeline.length)} tone="water" />
-            {readyBuilds > 0 && <span className="badge tier-green">{readyBuilds} READY TO OPEN</span>}
+            <BigStat label="RUNS IN PROGRESS" value={String(data.pipeline.length)} tone="water" />
+            {readyBuilds > 0 && <span className="badge tier-green">{readyBuilds} READY TO LAUNCH</span>}
           </div>
           <div className="mt-2 grid grid-cols-3 gap-2 text-center">
             <div>
@@ -281,7 +281,7 @@ export default function StatusDesk() {
         </Window>
 
         {/* scenarios */}
-        <Window title="SCENARIOS">
+        <Window title="GOALS">
           <div className="space-y-2">
             {data.quests.map((q) => {
               const pct = Math.min(100, (q.current / q.target) * 100);
@@ -290,7 +290,7 @@ export default function StatusDesk() {
                 <div key={q.id}>
                   <div className="flex justify-between font-display text-sm">
                     <span className={done ? 'tier-green' : 'warm'}>{q.goal}</span>
-                    <span className="dim">{done ? '★ WON' : `${Math.round(pct)}% · ${q.daysLeft}D`}</span>
+                    <span className="dim">{done ? '✓ DONE' : `${Math.round(pct)}% · ${q.daysLeft}D`}</span>
                   </div>
                   <Bar pct={pct} color={done ? 'var(--palm)' : 'var(--sun)'} />
                 </div>
@@ -334,7 +334,7 @@ export default function StatusDesk() {
 
       {/* alerts strip */}
       {redNotices.length > 0 && (
-        <Window title="NEEDS A MECHANIC" right={<button onClick={(e) => { e.stopPropagation(); setDesk('n'); }} className="keycap">N</button>}>
+        <Window title="NEEDS ATTENTION" right={<button onClick={(e) => { e.stopPropagation(); setDesk('n'); }} className="keycap">N</button>}>
           <div>
             {redNotices.map((n) => (
               <div key={n.id} className="tape-row">

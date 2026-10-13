@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildMoves, buildNotices, combineRating, computeMetrics, forecastCashflow, guestThoughts, rideState, sellThrough,
+  buildInsights, buildMoves, buildNotices, combineRating, computeMetrics, forecastCashflow, rideState, sellThrough,
 } from '../engine';
 import { fixtureData } from '../fixtures';
 import type { DayPoint, ParkData, Product } from '../types';
@@ -30,17 +30,12 @@ describe('intentional sellout (contract case 6)', () => {
     expect(buildMoves(d, m, 0).some((mv) => mv.text.startsWith('RESTOCK'))).toBe(false);
   });
 
-  it('adds no scarcity-pressure guest line', () => {
-    const d = withProducts([limited]);
-    expect(guestThoughts(d, computeMetrics(d, 7)).join(' ')).not.toMatch(/LIMITED TEE/);
-  });
-
   it('does not count against ride health or inventory discipline', () => {
     const live: Product = { ...limited, id: 'core', name: 'CORE', stock: 40, sold7d: 14, restockPolicy: undefined };
     const a = computeMetrics(withProducts([live]), 7).ratingParts;
     const b = computeMetrics(withProducts([live, limited]), 7).ratingParts;
     const pick = (ps: typeof a, l: string) => ps.find((p) => p.label === l)?.score;
-    expect(pick(b, 'RIDE HEALTH')).toBe(pick(a, 'RIDE HEALTH'));
+    expect(pick(b, 'PRODUCT HEALTH')).toBe(pick(a, 'PRODUCT HEALTH'));
     expect(pick(b, 'INVENTORY DISCIPLINE')).toBe(pick(a, 'INVENTORY DISCIPLINE'));
   });
 
@@ -104,7 +99,7 @@ describe('sessions and conversion are measured or unavailable (contract case 7)'
     delete d.refundRate;
     delete d.repeatRate;
     const parts = computeMetrics(d, 7).ratingParts;
-    expect(parts.find((p) => p.label === 'GUEST HAPPINESS')?.score).toBeNull();
+    expect(parts.find((p) => p.label === 'REFUNDS & REPEAT BUYERS')?.score).toBeNull();
   });
 
   it('a complete rating is unchanged by the renormalisation (weights sum to 10)', () => {
@@ -130,5 +125,22 @@ describe('no invented money owed', () => {
     const d = clone(fixtureData);
     const moves = buildMoves(d, computeMetrics(d, 7), 0);
     expect(moves.some((m) => /PAYOUT|OWED|COLLECT/.test(m.text))).toBe(false);
+  });
+});
+
+describe('plain business language', () => {
+  it('no generated message, label or band uses theme-park vocabulary', () => {
+    const d = clone(fixtureData);
+    for (const range of [1, 7, 30]) {
+      const m = computeMetrics(d, range);
+      const text = [
+        m.ratingBand,
+        ...m.ratingParts.flatMap((p) => [p.label, p.note]),
+        ...buildNotices(d, m).flatMap((n) => [n.source, n.text, n.detail]),
+        ...buildMoves(d, m, 5000).flatMap((mv) => [mv.text, mv.detail]),
+        ...buildInsights(d, m, 5000).flatMap((i) => [i.text, i.detail]),
+      ].join('\n');
+      expect(text).not.toMatch(/\b(PARK|RIDES?|GUESTS?|QUESTS?|SCENARIOS?|MECHANIC|BROKEN|REWARD)\b/i);
+    }
   });
 });

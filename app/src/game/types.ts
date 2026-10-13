@@ -1,6 +1,7 @@
 // ── Tropical Futures Terminal · domain model ──────────────────────────────
-// The RCT metaphor is conceptual: the brand is the park, products are rides,
-// pipeline products are rides under construction. No literal park scene.
+// Plain business language throughout (the earlier theme-park metaphor was
+// retired on 13 Oct 2026). Internal type names such as ParkData and Quest
+// are kept so existing park-data.json syncs still import.
 
 export type Tier = 'red' | 'amber' | 'green';
 export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'SOLD OUT' | 'CLOSED';
@@ -27,7 +28,7 @@ export interface Product {
 
 export interface PipelineItem {
   id: string;
-  name: string;            // "upcoming ride"
+  name: string;            // upcoming production run
   kind: string;            // TEE / CAP / JERSEY...
   qty: number;             // units being produced
   unitCost: number;        // production cost per unit
@@ -106,7 +107,7 @@ export interface CostItem {
 export interface Notice {
   id: string;
   tier: Tier;
-  source: 'SHOP' | 'ADS' | 'PARK';
+  source: 'SHOP' | 'ADS' | 'BUSINESS';
   text: string;
   detail: string;
   time: string;

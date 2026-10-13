@@ -241,14 +241,14 @@ export function combineRating(parts: RatingPart[]): number {
 }
 
 function bandFor(r: number): string {
-  if (r < 200) return 'DERELICT';
-  if (r < 400) return 'ROADSIDE ATTRACTION';
-  if (r < 600) return 'LOCAL FAVORITE';
-  if (r < 800) return 'DESTINATION PARK';
-  return 'HYPE PARK';
+  if (r < 200) return 'NEEDS WORK';
+  if (r < 400) return 'WEAK';
+  if (r < 600) return 'FAIR';
+  if (r < 800) return 'GOOD';
+  return 'STRONG';
 }
 
-// Park Rating, 0–1000. Each component scores 0..100, weights sum to 10.
+// Business score, 0–1000. Each component scores 0..100, weights sum to 10.
 function buildRating(
   d: ParkData,
   ctx: { revenue: number; prevRevenue: number; roas: number; breakEvenRoas: number },
@@ -277,10 +277,10 @@ function buildRating(
 
   return [
     { label: 'SALES MOMENTUM', score: momentum, weight: 2.5, note: momentum === null ? 'no comparable previous period — left out' : 'revenue vs trailing baseline' },
-    { label: 'RIDE HEALTH', score: rideHealth, weight: 2.0, note: 'products in stock + selling' },
+    { label: 'PRODUCT HEALTH', score: rideHealth, weight: 2.0, note: 'products in stock + selling' },
     { label: 'MARKETING EFFICIENCY', score: marketing, weight: 2.0, note: `roas vs break-even ${ctx.breakEvenRoas.toFixed(2)}` },
-    { label: 'GUEST HAPPINESS', score: happiness, weight: 1.5, note: happiness === null ? 'refund/repeat rates not in data — left out' : 'refunds ↓ · repeat customers ↑' },
-    { label: 'QUEST PACE', score: questPace, weight: 1.0, note: 'active scenario progress' },
+    { label: 'REFUNDS & REPEAT BUYERS', score: happiness, weight: 1.5, note: happiness === null ? 'refund/repeat rates not in data — left out' : 'refunds ↓ · repeat customers ↑' },
+    { label: 'GOAL PROGRESS', score: questPace, weight: 1.0, note: 'progress on active goals' },
     { label: 'INVENTORY DISCIPLINE', score: discipline, weight: 1.0, note: 'dead stock ↓ · stockouts ↓' },
   ];
 }
@@ -290,11 +290,11 @@ function clamp(v: number, lo: number, hi: number) {
 }
 
 export function campaignVerdict(c: Campaign, breakEvenRoas: number, targetRoas: number): { label: string; tier: 'red' | 'amber' | 'green' } {
-  if (c.status === 'PAUSED') return { label: 'IDLE', tier: 'amber' };
+  if (c.status === 'PAUSED') return { label: 'PAUSED', tier: 'amber' };
   const roas = c.spend > 0 ? c.revenue / c.spend : 0;
-  if (roas < breakEvenRoas) return { label: 'MONEY PIT', tier: 'red' };
-  if (roas >= targetRoas) return { label: 'SCALE ME', tier: 'green' };
-  return { label: 'HOLD', tier: 'amber' };
+  if (roas < breakEvenRoas) return { label: 'BELOW BREAK-EVEN', tier: 'red' };
+  if (roas >= targetRoas) return { label: 'ABOVE TARGET', tier: 'green' };
+  return { label: 'UNDER TARGET', tier: 'amber' };
 }
 
 // ── Cash-flow forecast ────────────────────────────────────────────────────
@@ -426,13 +426,13 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
     const prev = p.soldPrev7d / 7;
     const v = dailyVelocity(p);
     if (prev > 1 && v > prev * 1.4) {
-      push('green', 'SHOP', `${p.name} VELOCITY +${Math.round((v / prev - 1) * 100)}% WoW`, 'Guests are queuing for this ride.', 'i', '08:02');
+      push('green', 'SHOP', `${p.name} VELOCITY +${Math.round((v / prev - 1) * 100)}% WoW`, 'Selling faster than last week.', 'i', '08:02');
     }
   }
 
   for (const i of d.pipeline) {
     if (i.status === 'READY') {
-      push('green', 'PARK', `NEW RIDE READY TO OPEN: ${i.name}`, `${i.qty} units · $${pipelineNet(i).toLocaleString()} net potential. List it on the shop.`, 'p', '08:30');
+      push('green', 'BUSINESS', `READY TO LAUNCH: ${i.name}`, `${i.qty} units · $${pipelineNet(i).toLocaleString()} net potential. List it on the shop.`, 'p', '08:30');
     }
   }
 
@@ -451,37 +451,37 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
 
   for (const q of d.quests) {
     if (q.current >= q.target) {
-      push('green', 'PARK', `QUEST COMPLETE: ${q.goal}`, `Reward unlocked — ${q.reward}.`, 's', '09:00');
+      push('green', 'BUSINESS', `GOAL REACHED: ${q.goal}`, 'Target met.', 's', '09:00');
     } else if (q.daysLeft <= 3 && q.current / q.target < 0.85) {
-      push('amber', 'PARK', `QUEST AT RISK: ${q.goal}`, `${Math.round((q.current / q.target) * 100)}% with ${q.daysLeft} days left.`, 's', '09:00');
+      push('amber', 'BUSINESS', `GOAL AT RISK: ${q.goal}`, `${Math.round((q.current / q.target) * 100)}% with ${q.daysLeft} days left.`, 's', '09:00');
     }
   }
 
   if (m.revenueDeltaPct !== null && m.revenueDeltaPct > 10) {
-    push('green', 'PARK', `REVENUE +${m.revenueDeltaPct.toFixed(0)}% VS PREVIOUS PERIOD`, 'Park cash is climbing.', 's', '09:01');
+    push('green', 'BUSINESS', `REVENUE +${m.revenueDeltaPct.toFixed(0)}% VS PREVIOUS PERIOD`, 'Sales are up on the previous period.', 's', '09:01');
   }
 
   // cost / runway rules
   const runway = runwayMonths(d);
   const burn = monthlyBurn(d);
   if (runway < 6) {
-    push('red', 'PARK', `RUNWAY ${runway.toFixed(1)} MONTHS`, `Monthly burn $${burn.toLocaleString()} against $${d.bankBalance.toLocaleString()} in the bank. Cut costs or move units.`, 'c', '06:00');
+    push('red', 'BUSINESS', `RUNWAY ${runway.toFixed(1)} MONTHS`, `Monthly burn $${burn.toLocaleString()} against $${d.bankBalance.toLocaleString()} in the bank. Cut costs or move units.`, 'c', '06:00');
   } else if (runway < 12) {
-    push('amber', 'PARK', `RUNWAY ${runway.toFixed(1)} MONTHS`, `Monthly burn $${burn.toLocaleString()}. Comfortable, but watch the founder draw.`, 'c', '06:00');
+    push('amber', 'BUSINESS', `RUNWAY ${runway.toFixed(1)} MONTHS`, `Monthly burn $${burn.toLocaleString()}. Comfortable, but watch the founder draw.`, 'c', '06:00');
   }
   const subs = d.costs.filter((c) => c.category === 'SUBSCRIPTION');
   const inactiveSubs = subs.filter((c) => !c.active);
   for (const s of inactiveSubs) {
-    push('green', 'PARK', `PAUSED SUBSCRIPTION: ${s.name}`, `Would add $${s.amount}/mo if reactivated.`, 'c', '06:05');
+    push('green', 'BUSINESS', `PAUSED SUBSCRIPTION: ${s.name}`, `Would add $${s.amount}/mo if reactivated.`, 'c', '06:05');
   }
 
   // forward cash-flow — baseline = trailing 30d revenue
   const baseline30d = d.days.slice(-30).reduce((s, x) => s + x.revenue, 0);
   const fv = forecastVerdict(forecastCashflow(d, baseline30d, 6));
   if (fv.tone === 'red') {
-    push('red', 'PARK', `CASH FORECAST: ${fv.text}`, 'Projection includes burn, committed production runs, and expected pipeline revenue.', 'c', '06:10');
+    push('red', 'BUSINESS', `CASH FORECAST: ${fv.text}`, 'Projection includes burn, committed production runs, and expected pipeline revenue.', 'c', '06:10');
   } else if (fv.tone === 'amber') {
-    push('amber', 'PARK', `CASH FORECAST: ${fv.text}`, 'No negative month, but the bank takes a real dip. Time the next run carefully.', 'c', '06:10');
+    push('amber', 'BUSINESS', `CASH FORECAST: ${fv.text}`, 'No negative month, but the bank takes a real dip. Time the next run carefully.', 'c', '06:10');
   }
 
   const order = { red: 0, amber: 1, green: 2 } as const;
@@ -522,7 +522,7 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
 
   for (const i of d.pipeline.filter((x) => x.status === 'READY')) {
     const rev = Math.round(i.qty * i.retail * i.expectedSellThrough);
-    push('green', `OPEN ${i.name}`, `${i.qty} units paid for — list it and collect`, rev, 'p');
+    push('green', `LAUNCH ${i.name}`, `${i.qty} units paid for — list it and collect`, rev, 'p');
   }
 
   for (const c of d.channels) {
@@ -570,7 +570,7 @@ export function diffSnapshots(prev: ParkData, next: ParkData): SyncDelta {
   }
   for (const i of next.pipeline) {
     const before = prev.pipeline.find((q) => q.id === i.id);
-    if (!before) events.push(`NEW BUILD: ${i.name}`);
+    if (!before) events.push(`NEW PRODUCTION RUN: ${i.name}`);
     else if (before.status !== i.status) events.push(`${i.name}: ${before.status} → ${i.status}`);
   }
   return {
@@ -660,11 +660,11 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
       `${dead.stock} units${months ? ` · ~${months} months of stock at current pace` : ' · no measurable velocity'}. A bundle or archive sale frees the cash.`);
   }
 
-  // 4. ready rides are unclaimed money
+  // 4. ready runs are unclaimed money
   const ready = d.pipeline.filter((i) => i.status === 'READY');
   if (ready.length > 0) {
     const expected = ready.reduce((s, i) => s + Math.round(i.qty * i.retail * i.expectedSellThrough), 0);
-    push('green', `${ready.length} RIDE${ready.length > 1 ? 'S' : ''} READY — ~$${expected.toLocaleString()} EXPECTED ON OPENING`,
+    push('green', `${ready.length} RUN${ready.length > 1 ? 'S' : ''} READY — ~$${expected.toLocaleString()} EXPECTED AT LAUNCH`,
       ready.map((i) => i.name).join(' · ') + '. Listing costs nothing; the stock is already paid for.');
   }
 
@@ -682,7 +682,7 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
     }
   }
 
-  // 6. ad money pits
+  // 6. ads below break-even
   const pit = d.campaigns.find((c) => campaignVerdict(c, m.breakEvenRoas, d.targetRoas).tier === 'red');
   if (pit) {
     push('red', `PAUSING ${pit.name} SAVES ~$${pit.spend.toLocaleString()} PERIOD EQUIV`, `ROAS ${(pit.revenue / pit.spend).toFixed(2)} vs break-even ${m.breakEvenRoas.toFixed(2)}.`);
@@ -725,21 +725,4 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
 
   const order = { red: 0, amber: 1, green: 2 } as const;
   return out.sort((a, b) => order[a.tier] - order[b.tier]).slice(0, 6);
-}
-
-// Ambient ticker lines — FICTIONAL flavor driven by real states. These are
-// invented guest voices, never customer evidence; the ticker labels them so.
-// No scarcity-pressure lines for limited runs that sold out as planned.
-export function guestThoughts(d: ParkData, m: Metrics): string[] {
-  const t: string[] = [];
-  const missed = d.products.filter((p) => rideState(p) === 'SOLD OUT' && p.restockPolicy === 'REPLENISH');
-  const hot = d.products.filter((p) => rideState(p) === 'THRIVING');
-  for (const p of missed) t.push(`"WAITING ON THE ${p.name} RESTOCK"`);
-  for (const p of hot) t.push(`"THE ${p.name} LINE IS SO WORTH IT"`);
-  t.push(`"PARK RATING ${m.rating} — THIS PLACE IS ${m.ratingBand}"`);
-  t.push(`"SPENT $${Math.round(m.aov)} AND ZERO REGRETS"`);
-  t.push('"THINKING LIKE AN ARCHIPELAGO"');
-  t.push('"KEEP GOING. KEEP GOING. KEEP GOING."');
-  if (m.roas >= d.targetRoas) t.push('"THEIR ADS FOUND ME AT 2AM. NO NOTES."');
-  return t;
 }

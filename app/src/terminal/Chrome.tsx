@@ -94,9 +94,9 @@ export function StatusBar() {
   return (
     <footer className="flex items-center gap-4 border-t border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1 font-display text-base overflow-hidden whitespace-nowrap">
       <span className="phosphor">
-        PARK CASH ${data ? data.bankBalance.toLocaleString() : '—'}
+        BANK ${data ? data.bankBalance.toLocaleString() : '—'}
       </span>
-      <span className="warm">RATING {metrics?.rating ?? '—'} · {metrics?.ratingBand ?? ''}</span>
+      <span className="warm">SCORE {metrics?.rating ?? '—'} · {metrics?.ratingBand ?? ''}</span>
       {data?.nextDrop && dropDays !== null && dropDays >= 0 && (
         <span className={dropDays <= 3 ? 'tier-red' : 'tropic-pink'}>
           {dropDays === 0 ? 'DROP DAY' : `D-${dropDays}`} · {data.nextDrop.name}

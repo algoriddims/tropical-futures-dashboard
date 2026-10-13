@@ -18,15 +18,15 @@ import type { Look } from './look';
 export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g';
 
 export const DESKS: { key: DeskKey; label: string; title: string }[] = [
-  { key: 's', label: 'STATUS', title: 'PARK STATUS' },
-  { key: 'p', label: 'BUILDS', title: 'RIDES UNDER CONSTRUCTION' },
-  { key: 'g', label: 'GOALS', title: 'PARK PLANNER' },
-  { key: 'i', label: 'RIDES', title: 'RIDES / INVENTORY' },
+  { key: 's', label: 'STATUS', title: 'OVERVIEW' },
+  { key: 'p', label: 'PIPELINE', title: 'PRODUCTION PIPELINE' },
+  { key: 'g', label: 'GOALS', title: 'PLANNING' },
+  { key: 'i', label: 'INVENTORY', title: 'INVENTORY' },
   { key: 'l', label: 'SHOPS', title: 'STORE LOCATIONS' },
   { key: 'c', label: 'COSTS', title: 'FINANCES / BURN' },
   { key: 'o', label: 'ORDERS', title: 'ORDERS / CASH' },
-  { key: 'a', label: 'ADS', title: 'AD MACHINES' },
-  { key: 'n', label: 'NEWS', title: 'NEWSFEED' },
+  { key: 'a', label: 'ADS', title: 'AD CAMPAIGNS' },
+  { key: 'n', label: 'ALERTS', title: 'ALERTS' },
 ];
 
 export interface LiveEvent {
@@ -198,7 +198,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     document.documentElement.dataset.look = look;
   }, [look]);
 
-  // Simulated order stream — makes the park feel alive on sample data.
+  // Simulated order stream — makes sample data feel alive.
   // Never runs on imported syncs, and never touches cash.
   const hasData = data !== null;
   useEffect(() => {

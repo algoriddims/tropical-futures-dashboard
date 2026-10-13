@@ -1,6 +1,5 @@
 import { TerminalProvider, useTerminal } from '@/terminal/TerminalContext';
 import { TopBar, StatusBar, HelpOverlay } from '@/terminal/Chrome';
-import Ticker from '@/terminal/Ticker';
 import StatusDesk from '@/desks/StatusDesk';
 import PipelineDesk from '@/desks/PipelineDesk';
 import InventoryDesk from '@/desks/InventoryDesk';
@@ -33,7 +32,6 @@ export default function Home() {
     <TerminalProvider>
       <div className="flex h-screen flex-col overflow-hidden">
         <TopBar />
-        <Ticker />
         <DeskArea />
         <StatusBar />
         <HelpOverlay />

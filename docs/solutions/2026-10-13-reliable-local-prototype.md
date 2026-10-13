@@ -72,3 +72,10 @@ The Claude Code sync can now send these. Older `park-data.json` files still impo
 3. **Manual corrections must name what they replaced.** Storing the base value is what makes "the sync moved" detectable instead of silently lost. Encoded in `ShelfEdit.base` and the overrides tests.
 4. **No substitute denominators.** `|| 1` baselines and estimated visitors produce confident nonsense (+9900%). Return null and render "—". Encoded in `measuredSessions`, `revenueDeltaPct` and `combineRating`.
 5. **CSS uppercasing changes `innerText`.** Browser checks against this UI must compare uppercased text. A broad `has-text("IMPORT")` selector also matched "CLEAR IMPORT" and cleared the data mid-test. Use exact-text selectors for destructive buttons.
+
+## Later the same day
+
+- **Plain language.** At the owner's request, the theme-park vocabulary was replaced with business terms throughout: Bank balance, Inventory, Production pipeline, Traffic, Goals, Alerts, and a Score banded Needs work → Strong. The fictional guest-voice ticker and quest rewards were removed. Internal type and file names (`ParkData`, `Quest`, `park-data.json`) are unchanged, so existing syncs import as before. Guarded by an engine test and a smoke check that sweeps every desk.
+- **Looks.** Paper (default, Are.na-inspired), Dark, and the original Terminal, cycled with `T`. With no saved choice, the look follows the system light/dark setting.
+- **Font.** ABC Areal (Dinamo, licensed) for body text — see `app/src/assets/fonts/README.md` for license limits.
+- **Hosting.** Password-gated `app/server.mjs` + `app/Dockerfile` for Railway — see `docs/deploy/railway.md`. Not yet deployed.

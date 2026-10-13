@@ -26,7 +26,7 @@ export default function NewsfeedDesk() {
     <div className="flex h-full min-h-0 flex-col p-2">
       <div className="panel flex min-h-0 flex-1 flex-col">
         <div className="panel-head">
-          <span>GUEST THOUGHTS &amp; PARK EVENTS</span>
+          <span>ALERTS</span>
           <span className="flex gap-3">
             <span className="tier-red">▲ {counts.red}</span>
             <span className="tier-amber">◆ {counts.amber}</span>
@@ -68,7 +68,7 @@ export default function NewsfeedDesk() {
             </button>
           ))}
           {shown.length === 0 && (
-            <div className="p-6 text-center font-display text-lg dim">NO EVENTS AT THIS TIER — THE PARK IS CALM.</div>
+            <div className="p-6 text-center font-display text-lg dim">NOTHING AT THIS LEVEL.</div>
           )}
         </div>
       </div>

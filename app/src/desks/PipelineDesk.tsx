@@ -43,8 +43,8 @@ export default function PipelineDesk() {
       {/* summary strip */}
       <div className="window">
         <div className="window-head">
-          <span className="wh-title">CONSTRUCTION YARD · TOTALS</span>
-          <span className="dim text-sm">{metrics.pipelineUnits} UNITS ACROSS {data.pipeline.length} BUILDS</span>
+          <span className="wh-title">PIPELINE TOTALS</span>
+          <span className="dim text-sm">{metrics.pipelineUnits} UNITS ACROSS {data.pipeline.length} RUNS</span>
         </div>
         <div className="window-body grid grid-cols-5 gap-3 text-center">
           <div>
@@ -124,7 +124,7 @@ export default function PipelineDesk() {
                 </div>
 
                 <div className="text-[0.7rem] dim">
-                  AT {Math.round(item.expectedSellThrough * 100)}% SELL-THROUGH (COMPARABLE RIDES) → EXPECTED NET{' '}
+                  AT {Math.round(item.expectedSellThrough * 100)}% SELL-THROUGH (COMPARABLE PRODUCTS) → EXPECTED NET{' '}
                   <span className={expected >= 0 ? 'tier-green' : 'tier-red'}>
                     {expected >= 0 ? '+' : ''}${expected.toLocaleString()}
                   </span>

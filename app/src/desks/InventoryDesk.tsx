@@ -44,7 +44,7 @@ export default function InventoryDesk() {
     <div className="flex h-full min-h-0 flex-col p-2">
       <div className="window flex min-h-0 flex-1 flex-col">
         <div className="window-head">
-          <span className="wh-title">RIDES / INVENTORY</span>
+          <span className="wh-title">INVENTORY</span>
           <span className="flex items-center gap-1">
             {SORTS.map((s) => (
               <button
@@ -64,7 +64,7 @@ export default function InventoryDesk() {
           <table className="w-full text-[0.78rem]">
             <thead className="sticky top-0 bg-[var(--crt-dark)]">
               <tr className="border-b border-[var(--crt-mid)] text-left font-display text-sm dim">
-                <th className="px-3 py-1.5 font-normal">RIDE</th>
+                <th className="px-3 py-1.5 font-normal">PRODUCT</th>
                 <th className="px-2 py-1.5 font-normal">DROP</th>
                 <th className="px-2 py-1.5 text-right font-normal">RETAIL</th>
                 <th className="px-2 py-1.5 text-right font-normal">COST</th>
@@ -116,7 +116,7 @@ export default function InventoryDesk() {
         </div>
 
         <div className="flex items-center justify-between border-t border-[var(--crt-mid)] px-3 py-1.5 font-display text-base">
-          <span className="dim">TOTALS · {data.products.length} RIDES</span>
+          <span className="dim">TOTALS · {data.products.length} PRODUCTS</span>
           <span className="flex gap-4">
             <span className="warm">{totals.stock.toLocaleString()} UNITS</span>
             <span className="tier-red">${totals.cost.toLocaleString()} @ COST</span>
