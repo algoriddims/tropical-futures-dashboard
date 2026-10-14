@@ -18,7 +18,30 @@ Status, 13 October 2026: first sync run and imported in a test browser. The conn
 
 Not available from Shopify: ad spend (Meta), bank cash (ERA), stockist/consignment stock, invoices and statements, production pipeline. Those stay empty or "not connected", never zero-filled.
 
-## How a sync works
+## Analytics extract (current, 14 Oct 2026)
+
+The performance, products/sizes and channel views read the snapshot's `analytics` block. Its contract (grain, keys, timestamps, money) is in [analytics-contract.md](analytics-contract.md); metric definitions are in [../metrics.md](../metrics.md). It is built from a folder of raw, read-only extracts:
+
+1. **Extract** into `data/private/raw-YYYY-MM-DD/` (gitignored):
+   - `daily-by-channel.json` — ShopifyQL through Admin GraphQL `shopifyqlQuery` (the `run-analytics-query` tool truncates large results):
+     `FROM sales SHOW orders, gross_sales, discounts, returns, net_sales, cost_of_goods_sold, net_sales_with_cost_recorded, quantity_ordered, quantity_returned, net_items_sold GROUP BY sales_channel TIMESERIES day SINCE <from> UNTIL <yesterday>`
+   - `variant-daily.json` — same route:
+     `FROM sales SHOW quantity_ordered, quantity_returned, net_items_sold, gross_sales, discounts, returns, net_sales, cost_of_goods_sold, net_sales_with_cost_recorded GROUP BY sales_channel, product_id, product_variant_id TIMESERIES day SINCE <from> UNTIL <yesterday>`
+   - `variants-p*.json` — Admin GraphQL, one file per page:
+     `query Variants($after: String) { productVariants(first: 50, after: $after, query: "product_status:active") { pageInfo { hasNextPage endCursor } nodes { id title sku price requiresComponents selectedOptions { name value } product { id title productType status createdAt publishedAt tracksInventory } inventoryItem { id tracked unitCost { amount currencyCode } inventoryLevels(first: 10) { nodes { location { id name } quantities(names: ["available", "on_hand", "committed", "incoming", "reserved", "damaged", "safety_stock", "quality_control"]) { name quantity } } } } } } }`
+   - `meta.json` — shop identity (currency, timezone), `extractedAt`, `inventoryAsOf`, `salesRange`, sessions, recent orders (no customer names or contact details) and Online Store customer windows:
+     `FROM sales SHOW customers, returning_customers, new_customers, orders WHERE sales_channel = 'Online Store' SINCE <from> UNTIL <to>` (one query per window; Shopify can't split this by day, so each window is stored as asked).
+   `<yesterday>` = the last complete day in the shop's timezone. Today is never extracted (it would be a partial day).
+2. **Build.** From `app/`:
+   ```bash
+   npx vite-node scripts/shopify-snapshot.ts ../data/private/raw-YYYY-MM-DD ../data/private/park-data-YYYY-MM-DD.json [../data/private/era-YYYY-MM-DD.json]
+   ```
+   `buildAnalytics` (`app/src/analytics/shopifyAdapter.ts`) parses money to integer cents, de-duplicates identical rows (and refuses conflicting ones), records missing days as unknown, flags variant-vs-channel totals that don't reconcile, and refuses costs in a second currency. The legacy views are derived from the same extract (`legacyBridge.ts`), so both agree.
+3. **Upload** as below. Regenerate the metric dictionary after changing definitions: `npx vite-node scripts/metrics-doc.ts` (a test fails if `docs/metrics.md` is out of date).
+
+The older single-file extract below still builds (legacy views only, no `analytics` block).
+
+## How a sync works (legacy single-file extract)
 
 1. **Extract (Claude session with the Shopify connector).** Run the queries below read-only and save the results as `data/private/shopify-extract-YYYY-MM-DD.json` in the `ShopifyExtract` shape (`app/src/game/shopify.ts`). `data/private/` is gitignored — real business data never goes into the repo.
 2. **Build.** From `app/`:

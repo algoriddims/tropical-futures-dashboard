@@ -3,6 +3,8 @@
 // retired on 13 Oct 2026). Internal type names such as ParkData and Quest
 // are kept so existing park-data.json syncs still import.
 
+import type { AnalyticsSnapshot } from '../analytics/types';
+
 export type Tier = 'red' | 'amber' | 'green';
 export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'SOLD OUT' | 'CLOSED';
 
@@ -180,6 +182,8 @@ export interface ParkData {
   /** Synced bank/card accounts; when present, the bank balance comes from these, not manual entry. */
   accounts?: BankAccount[];
   cashflow?: CashMonth[];
+  /** Normalized Shopify analytics records (variant grain, minor units) — see src/analytics/types.ts. */
+  analytics?: AnalyticsSnapshot;
   grossMargin: number;
   targetRoas: number;
   growthTargetPct: number; // planning input: next production run's retail growth vs current pipeline

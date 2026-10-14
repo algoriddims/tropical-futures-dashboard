@@ -12,6 +12,26 @@ import AdsDesk from '@/desks/AdsDesk';
 import NewsfeedDesk from '@/desks/NewsfeedDesk';
 import ImportFeedDesk from '@/desks/ImportFeedDesk';
 
+// Shown above every desk: demo data is never mistaken for real numbers, and a
+// typed-in entry that didn't reach the server says so.
+function GlobalNotices() {
+  const { imported, storedSnapshotErrors, manualSync } = useTerminal();
+  return (
+    <>
+      {!imported && !storedSnapshotErrors && (
+        <div role="status" className="border-b border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1.5 font-display text-sm tier-amber">
+          DEMO DATA — SAMPLE DATA — INVENTED NUMBERS FOR LAYOUT ONLY, NOT TROPICAL FUTURES RESULTS. IMPORT A SYNC TO SEE REAL DATA.
+        </div>
+      )}
+      {(manualSync.state === 'unsaved' || manualSync.state === 'conflict') && manualSync.message && (
+        <div role="alert" className="border-b border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1.5 font-display text-sm tier-amber">
+          {manualSync.message}
+        </div>
+      )}
+    </>
+  );
+}
+
 function DeskArea() {
   const { desk } = useTerminal();
   return (
@@ -35,6 +55,7 @@ export default function Home() {
     <TerminalProvider>
       <div className="flex h-screen flex-col overflow-hidden">
         <TopBar />
+        <GlobalNotices />
         <DeskArea />
         <StatusBar />
         <HelpOverlay />

@@ -79,3 +79,19 @@ describe('fetchImportFeed', () => {
     expect((await fetchImportFeed(async () => res(200, { nope: 1 }))).status).toBe('error');
   });
 });
+
+describe('manual records client', () => {
+  it('fetches, saves with the base revision, and reports conflicts', async () => {
+    const { fetchManual, pushManual } = await import('../remote');
+    expect(await fetchManual(async () => res(200, { manual: null }))).toEqual({ status: 'ok', record: null });
+    const rec = { revision: 2, savedAt: '2026-10-14T07:00:00Z', payload: { monthlySalesGoal: 2000 } };
+    expect(await fetchManual(async () => res(200, rec))).toEqual({ status: 'ok', record: rec });
+    expect((await fetchManual(async () => res(200, { revision: 'x' }))).status).toBe('error');
+    let sent = '';
+    const saved = await pushManual({ costs: [] }, 2, async (_u, init) => { sent = String(init?.body); return res(200, { revision: 3, savedAt: 't' }); });
+    expect(saved).toEqual({ status: 'saved', revision: 3, savedAt: 't' });
+    expect(JSON.parse(sent)).toEqual({ baseRevision: 2, payload: { costs: [] } });
+    expect(await pushManual({}, 1, async () => res(409, { current: rec }))).toEqual({ status: 'conflict', current: rec });
+    expect((await pushManual({}, 1, async () => { throw new TypeError('offline'); })).status).toBe('error');
+  });
+});

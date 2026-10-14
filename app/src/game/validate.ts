@@ -7,6 +7,7 @@
 import { z } from 'zod';
 
 import type { ParkData } from './types';
+import { analyticsSchema } from '../analytics/schema';
 
 // No eval: the hosted page's Content-Security-Policy forbids it, and zod's
 // JIT probe would otherwise log a violation on every load.
@@ -137,6 +138,7 @@ export const parkDataSchema = z.looseObject({
   refundRate: rate.optional(),
   meta: meta.optional(),
   accounts: z.array(account).optional(),
+  analytics: analyticsSchema.optional(),
   cashflow: z.array(cashMonth).optional(),
   grossMargin: num.gt(0).max(1),
   targetRoas: num.positive(),
