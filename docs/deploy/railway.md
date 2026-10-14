@@ -1,6 +1,6 @@
 # Deploying to Railway
 
-Status, 13 October 2026: **deployed and in use.** The service builds from `app/Dockerfile` on Railway (region asia-southeast1, deployed from the `claude/dazzling-hopper-6ua9gf` branch). These were confirmed from Railway's deploy and HTTP logs:
+Status, 13 October 2026: **deployed and in use.** The service builds from `app/Dockerfile` on Railway (region asia-southeast1, deployed from `main` since 14 Oct 2026; CI runs on every push and pull request). These were confirmed from Railway's deploy and HTTP logs:
 - the server refused to start until `DASHBOARD_PASSWORD` was set;
 - unauthenticated requests get 401;
 - the volume at `/data` is writable with `RAILWAY_RUN_UID=0`;
@@ -30,7 +30,7 @@ The snapshot must live on a **Railway volume** — container files are wiped on 
 1. In Railway: **New Project → Deploy from GitHub repo →** `algoriddims/tropical-futures-dashboard`. Railway may ask you to install or authorize its GitHub app for this repo.
 2. Open the service **Settings**:
    - **Root Directory:** `app` — Railway then finds `app/Dockerfile` automatically.
-   - **Branch:** whichever branch you want deployed, normally `main` once milestone work is merged.
+   - **Branch:** `main`. Turn on **Wait for CI** (service Settings → Source) so a push only deploys after the GitHub checks pass.
    - Optional **Healthcheck Path:** `/healthz`.
 3. Under **Variables**, add:
    - `DASHBOARD_PASSWORD` — at least 12 characters, ideally a generated passphrase. Store it in your password manager.
