@@ -133,7 +133,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     try {
       parsed = JSON.parse(raw);
     } catch {
-      return ['INVALID JSON — PASTE THE FULL park-data.json CONTENTS'];
+      const t = raw.trim();
+      return [
+        'INVALID JSON — USE CHOOSE FILE, OR PASTE THE FULL park-data.json CONTENTS',
+        !t.startsWith('{')
+          ? `WHAT WAS PASTED STARTS WITH "${t.slice(0, 24)}" — THE FILE ITSELF STARTS WITH "{"`
+          : !t.endsWith('}')
+            ? `THE PASTE LOOKS CUT OFF: ${t.length.toLocaleString('en-US')} CHARACTERS, AND IT DOESN'T END WITH "}"`
+            : `${t.length.toLocaleString('en-US')} CHARACTERS PASTED, BUT THEY AREN'T VALID JSON`,
+      ];
     }
     const v = validateParkData(parsed);
     if (!v.ok) return ['NOT IMPORTED — THE CURRENT DATA IS UNCHANGED', ...v.errors];

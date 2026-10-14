@@ -89,15 +89,21 @@ const snapshot = (soldAtTropa) => ({
   await page.waitForTimeout(200);
   t = await body();
   check('invalid import shows field-level error', t.includes('NOT IMPORTED') && t.includes('PRODUCTS[0].STOCK: MISSING'));
+  // a paste that got cut off says so
+  await page.fill('textarea', JSON.stringify(snapshot(1)).slice(0, 200));
+  await page.click('button:text-is("IMPORT")');
+  await page.waitForTimeout(200);
+  check('cut-off paste is explained', (await body()).includes('THE PASTE LOOKS CUT OFF'));
   await page.keyboard.press('Escape'); await page.click('button[title="IMPORT SYNC DATA"]');
   await page.keyboard.press('l'); await page.waitForTimeout(120);
   check('desk keys are ignored while a dialog is open', !(await body()).includes('STOCK OUT IN THE WORLD') && (await page.locator('[aria-modal="true"]').count()) === 1);
   await page.click('button:has-text("CANCEL")');
   check('invalid import left sample data in place', (await body()).includes('SAMPLE DATA — INVENTED NUMBERS'));
 
-  // valid import
+  // valid import, by choosing the file rather than pasting
   await page.click('button[title="IMPORT SYNC DATA"]');
-  await page.fill('textarea', JSON.stringify(snapshot(4)));
+  await page.setInputFiles('input[type="file"]', { name: 'park-data.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(snapshot(4))) });
+  await page.waitForSelector('text=LOADED park-data.json');
   await page.click('button:text-is("IMPORT")');
   await page.waitForSelector('text=LAST SYNC');
   // desk keys are ignored while a dialog is open; the import dialog closes itself after success
