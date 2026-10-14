@@ -1,4 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=VT323&family=Chakra+Petch:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+/* ABC Areal (Dinamo) — licensed font, self-hosted as the original WOFF2s.
+   See src/assets/fonts/README.md for what the license allows. */
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Regular.woff2') format('woff2');
+  font-weight: 300 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Medium.woff2') format('woff2');
+  font-weight: 500 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'ABC Areal';
+  src: url('./assets/fonts/ABCAreal-Bold.woff2') format('woff2');
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 @tailwind base;
 @tailwind components;
@@ -23,6 +47,8 @@
   --tropic-pink: #ff7ad9;
   --water: #4dc3ff;
   --sun: #ffd23f;
+  --sim-row: rgba(0, 244, 142, 0.06);
+  color-scheme: dark;
 }
 
 html, body, #root {
@@ -32,12 +58,12 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Chakra Petch', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: 'ABC Areal', Arial, Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   overflow: hidden;
 }
 
 .font-display {
-  font-family: 'VT323', 'Chakra Petch', monospace;
+  font-family: 'VT323', 'ABC Areal', monospace;
   text-transform: uppercase;
 }
 
@@ -291,6 +317,188 @@ body {
 }
 
 canvas.pixelated { image-rendering: pixelated; }
+
+/* ── QUIET looks: PAPER (light) and DARK ─────────────────────
+   Are.na-like: plain page, one typeface, grey metadata, square
+   hairline-bordered blocks, no glow or gradients, colour only where it
+   means something (state). Both looks share the component rules below and
+   differ only in tokens, so every desk picks them up unchanged.
+   T cycles PAPER → DARK → TERMINAL. */
+:root[data-look='paper'] {
+  color-scheme: light;
+  --crt-black: #ffffff;          /* page */
+  --crt-dark: #ffffff;           /* blocks */
+  --crt-mid: #e6e6e6;            /* hairlines */
+  --crt-line: #cfcfcf;           /* stronger rules */
+  --vhs-white: #111111;          /* primary text */
+  --vhs-warm: #333333;           /* body text */
+  --vhs-dim: #6f6f6f;            /* metadata (>=4.5:1 on page) */
+  --chroma-red: #c0261b;
+  --chroma-green: #17803d;
+  --chroma-blue: #1f5fa8;
+  --phosphor: #17803d;
+  --amber: #9a5b00;
+  --palm: #2d5f2d;               /* brand document green */
+  --tropic-pink: #a3306f;
+  --water: #1f5fa8;
+  --sun: #7d6200;
+  --sim-row: #f4f8f5;
+  --q-strong: #111111;           /* active key, selection */
+  --q-on-strong: #ffffff;
+  --q-hover: #f6f6f6;
+  --q-scroll: #d6d6d6;
+  --q-overlay: rgba(17, 17, 17, 0.28);
+}
+
+/* Dark is its own palette, not an inversion: a warm-neutral charcoal page,
+   off-white type, and state colours lifted so they hold contrast on dark. */
+:root[data-look='dark'] {
+  color-scheme: dark;
+  --crt-black: #141414;
+  --crt-dark: #141414;
+  --crt-mid: #2b2b2b;
+  --crt-line: #3d3d3d;
+  --vhs-white: #ececec;
+  --vhs-warm: #c9c9c9;
+  --vhs-dim: #9a9a9a;            /* >=4.5:1 on #141414 */
+  --chroma-red: #ff6f61;
+  --chroma-green: #4fc77e;
+  --chroma-blue: #6aa8ff;
+  --phosphor: #4fc77e;
+  --amber: #e8a33d;
+  --palm: #3f9a5a;               /* brand green, lifted for dark */
+  --tropic-pink: #e07ab4;
+  --water: #6aa8ff;
+  --sun: #d9b84a;
+  --sim-row: #17211b;
+  --q-strong: #ececec;
+  --q-on-strong: #141414;
+  --q-hover: #1d1d1d;
+  --q-scroll: #3d3d3d;
+  --q-overlay: rgba(0, 0, 0, 0.55);
+}
+
+:is([data-look='paper'], [data-look='dark']) .crt-scanlines,
+:is([data-look='paper'], [data-look='dark']) .crt-rgb,
+:is([data-look='paper'], [data-look='dark']) .crt-vignette,
+:is([data-look='paper'], [data-look='dark']) .crt-noise,
+:is([data-look='paper'], [data-look='dark']) .glitch-band { display: none; }
+:is([data-look='paper'], [data-look='dark']) .crt-flicker { animation: none; }
+
+:is([data-look='paper'], [data-look='dark']) ::selection { background: var(--q-strong); color: var(--q-on-strong); }
+:is([data-look='paper'], [data-look='dark']) ::-webkit-scrollbar-track { background: var(--crt-black); }
+:is([data-look='paper'], [data-look='dark']) ::-webkit-scrollbar-thumb { background: var(--q-scroll); border-color: var(--crt-black); }
+
+/* One typeface. Display text keeps its uppercase strings but loses the
+   pixel face, and is set lighter and tighter so wide numbers still fit. */
+:is([data-look='paper'], [data-look='dark']) .font-display,
+:is([data-look='paper'], [data-look='dark']) .keycap,
+:is([data-look='paper'], [data-look='dark']) .panel-head,
+:is([data-look='paper'], [data-look='dark']) .window-head,
+:is([data-look='paper'], [data-look='dark']) .badge {
+  font-family: 'ABC Areal', Arial, Helvetica, sans-serif;
+}
+:is([data-look='paper'], [data-look='dark']) .font-display { letter-spacing: -0.01em; font-weight: 400; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-6xl { font-size: 2.75rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-4xl { font-size: 1.85rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-3xl { font-size: 1.5rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-2xl { font-size: 1.25rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-xl { font-size: 1.05rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-lg { font-size: 0.9rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-base { font-size: 0.82rem; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-sm { font-size: 0.78rem; letter-spacing: 0.03em; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-xs { font-size: 0.75rem; letter-spacing: 0.04em; }
+
+/* Blocks: hairline square boxes, quiet label row, more air. */
+:is([data-look='paper'], [data-look='dark']) .window,
+:is([data-look='paper'], [data-look='dark']) .panel {
+  background: var(--crt-dark);
+  border: 1px solid var(--crt-mid);
+  box-shadow: none;
+}
+:is([data-look='paper'], [data-look='dark']) .window-head,
+:is([data-look='paper'], [data-look='dark']) .panel-head {
+  background: none;
+  box-shadow: none;
+  border-bottom: 1px solid var(--crt-mid);
+  color: var(--vhs-dim);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 0.55rem 0.85rem;
+}
+:is([data-look='paper'], [data-look='dark']) .window-head .wh-title { color: var(--vhs-white); font-size: 0.78rem; }
+:is([data-look='paper'], [data-look='dark']) .window-head .wh-note { font-size: 0.72rem; }
+:is([data-look='paper'], [data-look='dark']) .window-head .wh-title::before { content: none; }
+:is([data-look='paper'], [data-look='dark']) .window-body { padding: 0.85rem; }
+
+:is([data-look='paper'], [data-look='dark']) .tape-row { border-bottom-color: var(--crt-mid); }
+:is([data-look='paper'], [data-look='dark']) .tape-row:hover { background: var(--q-hover); transform: none; }
+
+:is([data-look='paper'], [data-look='dark']) .badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.4rem;
+  line-height: 1.5;
+}
+
+/* Keys read as small outlined tags; the active desk is solid ink. */
+:is([data-look='paper'], [data-look='dark']) .keycap {
+  clip-path: none;
+  background: var(--crt-dark);
+  border-color: var(--crt-line);
+  color: var(--vhs-dim);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+:is([data-look='paper'], [data-look='dark']) .keycap-active,
+:is([data-look='paper'], [data-look='dark']) .keycap-btn:hover .keycap-active {
+  background: var(--q-strong);
+  border-color: var(--q-strong);
+  color: var(--q-on-strong);
+}
+:is([data-look='paper'], [data-look='dark']) .keycap-btn:hover .keycap,
+:is([data-look='paper'], [data-look='dark']) .keycap-btn:hover .keycap-label { color: var(--q-strong); text-shadow: none; }
+:is([data-look='paper'], [data-look='dark']) .keycap-btn:focus-visible { outline: 2px solid var(--q-strong); outline-offset: 2px; }
+
+/* Colour carries state only. Decorative accents (phosphor, water, palm,
+   pink, sun) take the text colour; red/amber/green tiers keep their meaning. Bars and
+   fills still use the brand green via the tokens. */
+:is([data-look='paper'], [data-look='dark']) .phosphor,
+:is([data-look='paper'], [data-look='dark']) .water,
+:is([data-look='paper'], [data-look='dark']) .palm,
+:is([data-look='paper'], [data-look='dark']) .tropic-pink,
+:is([data-look='paper'], [data-look='dark']) .sun { color: var(--vhs-white); }
+:is([data-look='paper'], [data-look='dark']) header .font-display { white-space: nowrap; }
+/* Areal is wider than the pixel face: tighten the nav so every desk fits. */
+:is([data-look='paper'], [data-look='dark']) header .keycap-btn { padding-inline: 0.25rem; gap: 0.3rem; }
+:is([data-look='paper'], [data-look='dark']) header .keycap-label.text-base { font-size: 0.74rem; }
+:is([data-look='paper'], [data-look='dark']) header .keycap-label.text-sm { font-size: 0.68rem; }
+:is([data-look='paper'], [data-look='dark']) header .font-display.text-xl { font-size: 0.95rem; }
+:is([data-look='paper'], [data-look='dark']) header .tropic-pink { color: var(--vhs-dim); }
+
+/* Modals dim the page lightly instead of blacking it out. */
+:is([data-look='paper'], [data-look='dark']) .bg-black\/80 { background: var(--q-overlay); }
+
+/* ── shared text roles (all looks) ───────────────────────── */
+.wh-title { font: inherit; margin: 0; }
+.wh-note { color: var(--vhs-dim); display: inline-flex; align-items: center; gap: 0.4rem; text-align: right; }
+.stat-label { font-size: 0.75rem; letter-spacing: 0.05em; color: var(--vhs-dim); text-transform: uppercase; }
+.stat-sub { font-size: 0.75rem; color: var(--vhs-dim); margin-top: 0.15rem; }
+.tape-row .stat-sub { margin-top: 0; }
+
+/* Keyboard focus is always visible. */
+button:focus-visible, summary:focus-visible, [tabindex]:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--q-strong, var(--phosphor));
+  outline-offset: 2px;
+}
+
+/* Touch: 44px targets. */
+@media (pointer: coarse) {
+  .tap, header button, .tape-row, .window-body button, summary { min-height: 44px; }
+  .keycap.tap { min-width: 44px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .crt-scanlines, .glitch-band, .ticker-track, .crt-flicker { animation: none !important; }

@@ -1,73 +1,37 @@
-# React + TypeScript + Vite
+# Tropical Futures Terminal
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Private operations dashboard for Tropical Futures (Shopify, wholesale, consignment, ad spend, bank/card costs). React + TypeScript + Vite frontend, plus a small zero-dependency Node server (`server.mjs`) for the hosted build. Project context and principles: [../CLAUDE.md](../CLAUDE.md).
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+Node 22 (see `.nvmrc`). Run from this `app/` directory after `npm ci`.
 
-## React Compiler
+| Command | What it does |
+|---|---|
+| `npm run dev` | Local dev server (port 3000) |
+| `npm run build` | Type-check and build to `dist/` |
+| `npm test` | Vitest regression checks (`src/game/__tests__/`) |
+| `npm run lint` | ESLint |
+| `node --test server.test.mjs` | Server tests |
+| `npm start` | Serve `dist/` with `server.mjs` (needs `DASHBOARD_PASSWORD`) |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Browser smoke check (needs Playwright, not a project dependency — see the script header):
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build && npx vite preview --port 4173 &
+node scripts/smoke-e2e.cjs
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+CI runs build, tests, lint, server tests and the smoke check: [../.github/workflows/ci.yml](../.github/workflows/ci.yml).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Data
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- Shopify sync: [../docs/data/shopify-sync.md](../docs/data/shopify-sync.md)
+- ERA business bank/card sync: [../docs/data/era-sync.md](../docs/data/era-sync.md)
+- Both feed one snapshot built by `scripts/shopify-snapshot.ts`.
+
+**Real data lives only in `data/private/` (gitignored) and, when hosted, in the server's shared snapshot (`/api/snapshot`).** Never commit real data, and never put it in fixtures, tests or the built assets.
+
+## Deploy
+
+Railway, from `Dockerfile`: [../docs/deploy/railway.md](../docs/deploy/railway.md). Build and health-check settings live in the Railway service settings (Railway's `railway.json` config-as-code is being retired and isn't used here).

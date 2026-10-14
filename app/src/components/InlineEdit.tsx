@@ -15,9 +15,10 @@ export function InlineNumber({
   className = '',
   title = 'CLICK TO EDIT',
 }: {
-  value: number;
+  /** null = not set yet; shown via format (or "—") and edited from blank. */
+  value: number | null;
   onCommit: (v: number) => void;
-  format?: (v: number) => string;
+  format?: (v: number | null) => string;
   className?: string;
   title?: string;
 }) {
@@ -34,7 +35,7 @@ export function InlineNumber({
 
   const finish = (save: boolean) => {
     if (save) {
-      const n = Number(draft.replace(/[^0-9.\-]/g, ''));
+      const n = Number(draft.replace(/[^0-9.-]/g, ''));
       if (!Number.isNaN(n) && draft.trim() !== '') onCommit(n);
     }
     setEditing(false);
@@ -47,11 +48,11 @@ export function InlineNumber({
         title={title}
         onClick={(e) => {
           e.stopPropagation();
-          setDraft(String(value));
+          setDraft(value === null ? '' : String(value));
           setEditing(true);
         }}
       >
-        {format ? format(value) : value.toLocaleString()}
+        {format ? format(value) : value === null ? '—' : value.toLocaleString()}
       </button>
     );
   }
