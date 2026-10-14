@@ -20,6 +20,10 @@
 //   GET /api/snapshot/history → { entries: [{ savedAt, current, meta, counts }] },
 //                       newest first: the import feed (data notes per upload,
 //                       no business records)
+//   GET /api/manual     → { revision, savedAt, payload } or { manual: null }
+//   PUT /api/manual     ← { baseRevision, payload }: typed-in records (costs,
+//                       goal, planning inputs, shelf corrections); 409 with the
+//                       current record when another device saved first
 // Every response carries X-TFI-Server: 1 so the app can tell it's talking to
 // this server (and not, say, a dev server that answers any path with HTML).
 // The app validates the full schema before uploading and again on load; the
@@ -53,6 +57,8 @@ const SNAPSHOT_DIR = process.env.SNAPSHOT_DIR || join(fileURLToPath(new URL('.',
 const SNAPSHOT_FILE = join(SNAPSHOT_DIR, 'snapshot.json');
 const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024;
 const KEEP_VERSIONS = 20;
+const MANUAL_FILE = join(SNAPSHOT_DIR, 'manual.json');
+const MAX_MANUAL_BYTES = 1024 * 1024;
 const FAIL_LIMIT = 10;
 const FAIL_WINDOW_MS = 10 * 60 * 1000;
 const MAX_TRACKED_IPS = 10_000;
@@ -211,8 +217,8 @@ function readBody(req, limit) {
 // while the client is still sending makes Node close the socket under it, and
 // the client sees a reset instead of the 413. Only signed-in clients get here;
 // past a cap, answer straight away and close.
-function refuseTooLarge(req, res, cap = 4 * MAX_SNAPSHOT_BYTES) {
-  const body = { error: 'snapshot larger than 5 MB' };
+function refuseTooLarge(req, res, cap = 4 * MAX_SNAPSHOT_BYTES, message = 'snapshot larger than 5 MB') {
+  const body = { error: message };
   if (Number(req.headers['content-length']) > cap) {
     sendJson(res, 413, body, { Connection: 'close' });
     return;
@@ -360,6 +366,82 @@ async function handleSnapshot(req, res) {
   sendJson(res, 200, { savedAt });
 }
 
+// ── Manual records ─────────────────────────────────────────────────────────
+// Things typed into the dashboard (cost lines, goal, planning inputs, shelf
+// corrections) are business records, so the server keeps them durably next to
+// the snapshot — browsers only cache them. Each save carries the revision it
+// was based on; a save from a device that hasn't seen the latest revision
+// gets 409 with the current record instead of silently overwriting it.
+const MANUAL_ARCHIVE_RE = /^manual-(\d+)-(\d+)\.json$/;
+
+async function readManual() {
+  try {
+    return JSON.parse(await readFile(MANUAL_FILE, 'utf8'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
+async function saveManual(payload, baseRevision) {
+  await mkdir(SNAPSHOT_DIR, { recursive: true });
+  const current = await readManual();
+  const currentRev = current?.revision ?? 0;
+  if ((baseRevision ?? 0) !== currentRev) return { conflict: current };
+  const record = { revision: currentRev + 1, savedAt: new Date().toISOString(), payload };
+  const tmp = join(SNAPSHOT_DIR, `manual.json.${randomUUID()}.tmp`);
+  try {
+    await writeFile(tmp, JSON.stringify(record));
+    if (current) await copyFile(MANUAL_FILE, join(SNAPSHOT_DIR, `manual-${Date.now()}-${String(currentRev).padStart(6, '0')}.json`)).catch(() => {});
+    await rename(tmp, MANUAL_FILE);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
+  const old = (await readdir(SNAPSHOT_DIR)).filter((f) => MANUAL_ARCHIVE_RE.test(f)).sort().reverse();
+  for (const f of old.slice(KEEP_VERSIONS)) await unlink(join(SNAPSHOT_DIR, f)).catch(() => {});
+  return { record };
+}
+
+async function handleManual(req, res) {
+  if (req.method === 'GET') {
+    try {
+      const m = await readManual();
+      sendJson(res, 200, m ?? { manual: null });
+    } catch (e) {
+      console.error(`manual read failed (${e.code ?? 'error'})`);
+      sendJson(res, 500, { error: 'could not read the stored manual records' });
+    }
+    return;
+  }
+  if (req.method !== 'PUT') { sendEmpty(res, 405, { Allow: 'GET, PUT' }); return; }
+  if (!sameOrigin(req.headers.origin, req.headers.host)) { sendJson(res, 403, { error: 'cross-origin upload refused' }); return; }
+  if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) { sendJson(res, 415, { error: 'send Content-Type: application/json' }); return; }
+  let body;
+  try {
+    if (Number(req.headers['content-length']) > MAX_MANUAL_BYTES) throw Object.assign(new Error('too large'), { status: 413 });
+    body = JSON.parse(await readBody(req, MAX_MANUAL_BYTES));
+  } catch (e) {
+    if (e.status === 413) { refuseTooLarge(req, res, 4 * MAX_MANUAL_BYTES, 'manual records larger than 1 MB'); return; }
+    sendJson(res, 400, { error: 'body is not valid JSON' });
+    return;
+  }
+  const rev = body?.baseRevision;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)
+    || !(rev === null || (Number.isInteger(rev) && rev >= 0))) {
+    sendJson(res, 422, { error: 'expected { baseRevision: number | null, payload: object }' });
+    return;
+  }
+  try {
+    const r = await serialized(() => saveManual(body.payload, rev));
+    if (r.conflict !== undefined) { sendJson(res, 409, { error: 'changed on another device', current: r.conflict }); return; }
+    sendJson(res, 200, { revision: r.record.revision, savedAt: r.record.savedAt });
+  } catch (e) {
+    console.error(`manual save failed (${e.code ?? 'error'}): ${e.message}`);
+    sendJson(res, 500, { error: `could not save (${e.code ?? 'write failed'})` });
+  }
+}
+
 // Import feed: one entry per kept version, newest first. Only the snapshot's
 // own meta (coverage, sources, data notes) and record counts — never the
 // records themselves. Strings are capped; anything malformed is skipped.
@@ -452,7 +534,7 @@ const server = createServer(async (req, res) => {
       res.end('ok');
       return;
     }
-    const isApi = url.pathname === '/api/snapshot' || url.pathname === '/api/snapshot/history';
+    const isApi = url.pathname === '/api/snapshot' || url.pathname === '/api/snapshot/history' || url.pathname === '/api/manual';
     if (!isApi && req.method !== 'GET' && req.method !== 'HEAD') {
       sendEmpty(res, 405, { Allow: 'GET, HEAD' });
       return;
@@ -478,6 +560,7 @@ const server = createServer(async (req, res) => {
     }
     if (isApi) {
       if (url.pathname === '/api/snapshot') await handleSnapshot(req, res);
+      else if (url.pathname === '/api/manual') await handleManual(req, res);
       else await handleHistory(req, res);
       return;
     }

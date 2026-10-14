@@ -36,6 +36,32 @@ const snapshot = (soldAtTropa) => ({
   grossMargin: 0.6, targetRoas: 3,
 });
 
+// A small analytics block dated relative to today in New York, so the
+// "last 30 complete days" period always lands on it.
+const nyToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const shift = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const yesterday = shift(nyToday, -1);
+const m = (o) => ({ grossSales: 0, discounts: 0, returns: 0, netSales: 0, cogs: null, netSalesWithCost: 0, qtyOrdered: 0, qtyReturned: 0, netItems: 0, ...o });
+const analytics = {
+  version: 1, source: 'shopify', shop: 'smoke.shop', currency: 'USD', timezone: 'America/New_York',
+  extractedAt: new Date().toISOString(), inventoryAsOf: new Date().toISOString(),
+  salesCoverage: { from: shift(yesterday, -59), to: yesterday, missing: [] },
+  daily: [
+    { date: shift(yesterday, -1), channel: 'Online Store', orders: 1, ...m({ grossSales: 5000, netSales: 5000, cogs: 2000, netSalesWithCost: 5000, qtyOrdered: 1, netItems: 1 }) },
+    { date: shift(yesterday, -35), channel: 'Online Store', orders: 1, ...m({ grossSales: 4000, netSales: 4000, cogs: 1000, netSalesWithCost: 4000, qtyOrdered: 1, netItems: 1 }) },
+  ],
+  variantDaily: [
+    { date: shift(yesterday, -1), channel: 'Online Store', productId: '1', variantId: '11', ...m({ grossSales: 5000, netSales: 5000, cogs: 2000, netSalesWithCost: 5000, qtyOrdered: 1, netItems: 1 }) },
+    { date: shift(yesterday, -35), channel: 'Online Store', productId: '1', variantId: '12', ...m({ grossSales: 4000, netSales: 4000, cogs: 1000, netSalesWithCost: 4000, qtyOrdered: 1, netItems: 1 }) },
+  ],
+  variants: [
+    { variantId: '11', productId: '1', productTitle: 'SMOKE TEE', productType: 'Tshirt', variantTitle: 'S', sku: null, options: [{ name: 'Size', value: 'S' }], price: 5000, unitCost: 2000, productCreatedAt: '2026-01-01T00:00:00Z', productPublishedAt: '2026-01-02T00:00:00Z', tracked: true, isBundle: false, inventory: [{ locationId: '1', locationName: 'WAREHOUSE', available: 0, onHand: 0, committed: 0, incoming: 0, reserved: 0, unavailable: 0 }] },
+    { variantId: '12', productId: '1', productTitle: 'SMOKE TEE', productType: 'Tshirt', variantTitle: 'M', sku: null, options: [{ name: 'Size', value: 'M' }], price: 5000, unitCost: 2000, productCreatedAt: '2026-01-01T00:00:00Z', productPublishedAt: '2026-01-02T00:00:00Z', tracked: true, isBundle: false, inventory: [{ locationId: '1', locationName: 'WAREHOUSE', available: 3, onHand: 3, committed: 0, incoming: 0, reserved: 0, unavailable: 0 }] },
+  ],
+  customers: [],
+  notes: [],
+};
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
@@ -79,7 +105,7 @@ const snapshot = (soldAtTropa) => ({
   check('O opens orders desk with honest tape label', t.includes('ORDER TAPE · SAMPLE') && !/\bLIVE\b/.test(t.split('ORDER TAPE')[1]?.slice(0, 40) ?? ''));
   await page.keyboard.press('3'); await page.waitForTimeout(100);
   await page.keyboard.press('s'); await page.waitForTimeout(150);
-  check('S returns to status desk', (await body()).includes('TOP MOVES'));
+  check('S returns to status desk', (await body()).includes('THIS WEEK: LOOK INTO'));
 
   // invalid import is rejected and changes nothing
   await page.click('button[title="IMPORT SYNC DATA"]');
@@ -148,6 +174,28 @@ const snapshot = (soldAtTropa) => ({
   await page.waitForTimeout(150);
   check('USE SYNC resolves to the sync value', !(await body()).includes('SHELF COUNT CONFLICTS') && (await page.locator('button[title="CORRECT UNITS SOLD"]').first().innerText()).trim() === '5');
 
+
+  // variant-level analytics: performance vs prior, exceptions, size matrix, definitions
+  await page.click('button[title="IMPORT SYNC DATA"]');
+  await page.fill('textarea', JSON.stringify({ ...snapshot(5), analytics }));
+  await page.click('button:text-is("IMPORT")');
+  await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
+  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  t = await body();
+  check('performance shows net revenue vs the prior period with dates', t.includes('NET PRODUCT REVENUE') && t.includes('$50') && t.includes('+$10 (+25.0%)') && t.includes(' VS '));
+  check('margin change in percentage points', t.includes('60.0%') && t.includes('−15.0 PP'));
+  check('selling size that is out of stock is an exception with its rule', t.includes('SMOKE TEE: S UNAVAILABLE') && t.includes('RULE:'));
+  check('wholesale and drop sell-through say unavailable', t.includes('WHOLESALE NOT CONNECTED') && t.includes('DROP SELL-THROUGH UNAVAILABLE'));
+  await page.click('button:has-text("DEFINITIONS")');
+  await page.waitForSelector('[aria-modal="true"]');
+  check('definitions dialog lists the metric dictionary', (await body()).includes('CUMULATIVE DROP SELL-THROUGH') || (await page.locator('[aria-modal="true"]').innerText()).includes('Cumulative drop sell-through'));
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
+  await page.keyboard.press('i'); await page.waitForTimeout(200);
+  await page.click('button:has-text("SIZE AVAILABILITY")');
+  await page.waitForTimeout(150);
+  t = await body();
+  check('size matrix shows OUT and counts as text', /SMOKE TEE\s+OUT ★\s+3/.test(t));
 
   check('no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

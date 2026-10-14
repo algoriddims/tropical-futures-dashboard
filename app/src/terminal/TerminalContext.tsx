@@ -5,19 +5,21 @@ import { computeMetrics, buildNotices } from '@/game/engine';
 import { FixtureSource } from '@/game/source';
 import {
   applyManual, applyShelfEdits, clearImported, discardShelfEdit, exportBackup, extractManual, loadImported,
-  loadManual, loadPreviousSync, persistImported, rebaseShelfEdit, recordShelfEdit, saveManual,
+  loadManual, loadManualSync, loadPreviousSync, persistImported, rebaseShelfEdit, recordShelfEdit, reconcileManual, saveManual,
+  saveManualSync, stashManual,
 } from '@/game/overrides';
 import type { ManualSlices, ShelfEditStatus, ShelfField } from '@/game/overrides';
 import { validateParkData } from '@/game/validate';
-import { fetchRemoteSnapshot, uploadSnapshot } from '@/game/remote';
+import { fetchManual, fetchRemoteSnapshot, pushManual, uploadSnapshot } from '@/game/remote';
 import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
 import { loadLook, nextLook, saveLook } from './look';
 import type { Look } from './look';
 import { DESKS } from './desks';
+import type { ChannelFilter } from '@/analytics/channels';
 import type { DeskKey } from './desks';
 import { TerminalCtx } from './useTerminal';
-import type { LiveEvent, TerminalState } from './useTerminal';
+import type { LiveEvent, ManualSyncState, TerminalState } from './useTerminal';
 
 const source = new FixtureSource(); // ← swap for ShopifyAdminSource / MetaMarketingSource
 
@@ -36,8 +38,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const [base, setBase] = useState<ParkData | null>(null);
   const [manual, setManual] = useState<Partial<ManualSlices>>(() => loadManual());
   const [storageOk, setStorageOk] = useState(true);
+  // Typed-in records are saved to the server when there is one; this browser only caches them.
+  const [manualSync, setManualSync] = useState<ManualSyncState>({ state: 'local' });
+  const syncMeta = useRef(loadManualSync());
+  const pushTimer = useRef<number | undefined>(undefined);
+  const setMeta = (m: { revision: number | null; dirty: boolean }) => { syncMeta.current = m; saveManualSync(m); };
   const [desk, setDesk] = useState<DeskKey>('s');
-  const [range, setRange] = useState(7);
+  // Complete calendar days in the business timezone (7 / 14 / 30), compared with the period just before.
+  const [range, setRange] = useState(30);
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>('ALL');
   const [helpOpen, setHelpOpen] = useState(false);
   const [look, setLook] = useState<Look>(() => loadLook());
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
@@ -61,10 +70,55 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     setBase(payload);
   }, []);
 
+  const adoptServerManual = useCallback((payload: Partial<ManualSlices>, revision: number) => {
+    setManual(payload);
+    setStorageOk(saveManual(payload));
+    setMeta({ revision, dirty: false });
+  }, []);
+
+  const pushManualNow = useCallback(async (payload: Partial<ManualSlices>) => {
+    setManualSync({ state: 'saving' });
+    const r = await pushManual(payload, syncMeta.current.revision);
+    if (r.status === 'saved') {
+      setMeta({ revision: r.revision, dirty: false });
+      setManualSync({ state: 'saved', revision: r.revision, savedAt: r.savedAt });
+    } else if (r.status === 'conflict') {
+      stashManual(payload);
+      if (r.current) adoptServerManual(r.current.payload as Partial<ManualSlices>, r.current.revision);
+      setManualSync({ state: 'conflict', message: 'ANOTHER DEVICE SAVED FIRST — ITS ENTRIES ARE SHOWN; THIS BROWSER\'S COPY WAS KEPT IN EXPORT BACKUP' });
+    } else {
+      setManualSync({ state: 'unsaved', message: `NOT SAVED TO THE SERVER (${r.message.toUpperCase()}) — KEPT IN THIS BROWSER, RETRIED ON THE NEXT CHANGE OR RELOAD` });
+    }
+  }, [adoptServerManual]);
+
+  const syncManualFromServer = useCallback(async () => {
+    const r = await fetchManual();
+    if (r.status !== 'ok') {
+      if (r.status === 'error') setManualSync({ state: 'unsaved', message: `COULD NOT READ SAVED ENTRIES FROM THE SERVER (${r.message.toUpperCase()})` });
+      return;
+    }
+    const local = loadManual();
+    const decision = reconcileManual(local, syncMeta.current, r.record);
+    if (decision === 'push-local') await pushManualNow(local);
+    else if (decision === 'adopt-server' && r.record) {
+      adoptServerManual(r.record.payload as Partial<ManualSlices>, r.record.revision);
+      setManualSync({ state: 'saved', revision: r.record.revision, savedAt: r.record.savedAt });
+    } else if (decision === 'conflict' && r.record) {
+      stashManual(local);
+      adoptServerManual(r.record.payload as Partial<ManualSlices>, r.record.revision);
+      setManualSync({ state: 'conflict', message: 'ENTRIES ON THE SERVER ARE NEWER — THEY ARE SHOWN; THIS BROWSER\'S UNSAVED COPY WAS KEPT IN EXPORT BACKUP' });
+    } else if (r.record) {
+      setManualSync({ state: 'saved', revision: r.record.revision, savedAt: r.record.savedAt });
+    } else {
+      setManualSync({ state: 'saved' });
+    }
+  }, [adoptServerManual, pushManualNow]);
+
   const reloadShared = useCallback(async () => {
     const r = await fetchRemoteSnapshot();
     if (r.status === 'unavailable') { setShared('local'); return; }
     setShared('server');
+    void syncManualFromServer();
     if (r.status === 'ok') {
       setSharedError(null);
       // Unchanged since last time: keep the current view (and its delta).
@@ -78,7 +132,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     } else {
       setSharedError(null); // empty: nothing uploaded yet
     }
-  }, [showSnapshot]);
+  }, [showSnapshot, syncManualFromServer]);
 
   useEffect(() => {
     source.load().then((sample) => {
@@ -109,7 +163,13 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const commitManual = useCallback((next: Partial<ManualSlices>) => {
     setManual(next);
     setStorageOk(saveManual(next));
-  }, []);
+    setMeta({ revision: syncMeta.current.revision, dirty: true });
+    if (shared !== 'server') return;
+    setManualSync({ state: 'saving' });
+    // Debounced so typing a number doesn't send one save per keystroke.
+    window.clearTimeout(pushTimer.current);
+    pushTimer.current = window.setTimeout(() => { void pushManualNow(next); }, 600);
+  }, [shared, pushManualNow]);
 
   const updateData = useCallback((mut: (d: ParkData) => ParkData) => {
     if (!data) return;
@@ -232,8 +292,8 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       if (k === 't') { toggleLook(); return; }
       const deskHit = DESKS.find((d) => d.key === k);
       if (deskHit) { setDesk(deskHit.key); return; }
-      if (k === '1') setRange(1);
-      if (k === '2') setRange(7);
+      if (k === '1') setRange(7);
+      if (k === '2') setRange(14);
       if (k === '3') setRange(30);
     },
     [toggleLook],
@@ -245,11 +305,11 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   }, [onKey]);
 
   const value: TerminalState = {
-    data, metrics, notices, desk, setDesk, range, setRange,
+    data, metrics, notices, desk, setDesk, range, setRange, channelFilter, setChannelFilter,
     helpOpen, setHelpOpen, look, toggleLook, liveEvents,
     sourceName: imported ? 'IMPORTED SYNC' : source.name,
     updateData, editShelf, resolveShelfEdit, shelfStatus, storageOk,
-    imported, importedAt, storedSnapshotErrors, delta, shared, sharedError, reloadShared, importData, clearImport, exportStored, forgetDevice,
+    imported, importedAt, storedSnapshotErrors, delta, shared, sharedError, reloadShared, importData, clearImport, exportStored, forgetDevice, manualSync,
   };
   return <TerminalCtx.Provider value={value}>{children}</TerminalCtx.Provider>;
 }

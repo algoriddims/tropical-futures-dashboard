@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { useAnalytics } from './analytics/useAnalytics';
+import { ProductTable, SizeMatrix } from './analytics/Products';
+import { ChannelFilterControl } from './analytics/Performance';
+import { formatRange } from '@/analytics/period';
 import { useTerminal } from '@/terminal/useTerminal';
 import { rideState, sellThrough, hasSellThrough, daysOfStock } from '@/game/engine';
 import type { Product } from '@/game/types';
@@ -24,7 +28,44 @@ function stateTone(state: string, p: Product): string {
   return p.restockPolicy === 'LIMITED' ? 'palm' : p.restockPolicy === 'REPLENISH' ? 'tier-red' : 'tier-amber';
 }
 
+// With variant-level analytics: sortable products (incl. zero sellers) and a
+// size-availability matrix. Without (sample data, older syncs): the original list.
 export default function InventoryDesk() {
+  const an = useAnalytics();
+  const [view, setView] = useState<'products' | 'sizes'>('products');
+  if (an.kind !== 'ok') return <LegacyInventory note={an.kind === 'none' ? undefined : 'BUSINESS TIMEZONE NOT CONFIGURED — PERIOD SALES UNAVAILABLE.'} />;
+  const v = an.view;
+  return (
+    <div className="h-full overflow-y-auto p-2 space-y-2">
+      <section className="window" aria-labelledby="inv-h">
+        <div className="window-head flex-wrap">
+          <h2 id="inv-h" className="wh-title">PRODUCTS & SIZES</h2>
+          <span className="wh-note flex-wrap">
+            <span role="group" aria-label="View" className="flex gap-1">
+              {(['products', 'sizes'] as const).map((k) => (
+                <button key={k} onClick={() => setView(k)} aria-pressed={view === k}
+                  className={`tap border px-2 py-0.5 font-display text-sm ${view === k ? 'border-[var(--q-strong,var(--phosphor))] text-[var(--vhs-white)]' : 'border-[var(--crt-line)] dim'}`}>
+                  {k === 'products' ? 'PRODUCTS' : 'SIZE AVAILABILITY'}
+                </button>
+              ))}
+            </span>
+            {view === 'products' && <ChannelFilterControl />}
+          </span>
+        </div>
+        <div className="window-body space-y-2">
+          <p className="stat-sub">
+            {view === 'products'
+              ? `SALES: ${formatRange(v.cmp.current)} VS ${formatRange(v.cmp.prior)} (PERIOD AND CHANNEL FILTERS APPLY). STOCK AND COVER: AS OF ${new Date(v.a.inventoryAsOf).toLocaleString()}, ALL CHANNELS. CUMULATIVE DROP SELL-THROUGH IS UNAVAILABLE — NO DROP MAPPING OR RECEIPT HISTORY; "PUBLISHED" IS THE SHOPIFY PUBLISH DATE, NOT A DROP LAUNCH.`
+              : 'WHICH SIZES CAN BE BOUGHT RIGHT NOW. FILTERS DON\'T APPLY — THIS IS THE CURRENT STOCK READ.'}
+          </p>
+          {view === 'products' ? <ProductTable v={v} /> : <SizeMatrix v={v} />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LegacyInventory({ note }: { note?: string }) {
   const { data, metrics } = useTerminal();
   const [sort, setSort] = useState<SortKey>('revenue');
   if (!data || !metrics) return null;
@@ -44,6 +85,7 @@ export default function InventoryDesk() {
 
   return (
     <div className="flex h-full min-h-0 flex-col p-2">
+      {note && <p className="stat-sub tier-amber pb-1">{note}</p>}
       <div className="window flex min-h-0 flex-1 flex-col">
         <div className="window-head flex-wrap">
           <h2 className="wh-title">INVENTORY</h2>

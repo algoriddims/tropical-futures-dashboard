@@ -136,3 +136,57 @@ export async function fetchImportFeed(fetchImpl: FetchLike = fetch): Promise<Imp
   const entries = raw.map(toEntry).filter((e): e is ImportFeedEntry => e !== null);
   return { status: 'ok', entries };
 }
+
+// ── Manual records on the server ─────────────────────────────────────────
+// Typed-in records (costs, goal, planning inputs, shelf corrections) are kept
+// durably on the server; the browser caches them. Saves carry the revision
+// they were based on, and a newer revision from another device wins (409).
+
+export interface ManualRecord { revision: number; savedAt: string; payload: Record<string, unknown> }
+
+export type ManualFetch =
+  | { status: 'unavailable' }
+  | { status: 'ok'; record: ManualRecord | null }
+  | { status: 'error'; message: string };
+
+const isRecord = (x: unknown): x is ManualRecord =>
+  !!x && typeof x === 'object' && Number.isInteger((x as ManualRecord).revision) && typeof (x as ManualRecord).savedAt === 'string'
+  && !!(x as ManualRecord).payload && typeof (x as ManualRecord).payload === 'object' && !Array.isArray((x as ManualRecord).payload);
+
+export async function fetchManual(fetchImpl: FetchLike = fetch): Promise<ManualFetch> {
+  let r: Response;
+  try {
+    r = await fetchImpl('/api/manual', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+  } catch {
+    return { status: 'unavailable' };
+  }
+  if (!isServer(r)) return { status: 'unavailable' };
+  if (!r.ok) return { status: 'error', message: `server answered ${r.status}` };
+  let body: unknown;
+  try { body = await r.json(); } catch { return { status: 'error', message: 'server returned unreadable data' }; }
+  if (body && typeof body === 'object' && 'manual' in body && (body as { manual: unknown }).manual === null) return { status: 'ok', record: null };
+  return isRecord(body) ? { status: 'ok', record: body } : { status: 'error', message: 'server returned an unexpected record' };
+}
+
+export type ManualPush =
+  | { status: 'saved'; revision: number; savedAt: string }
+  | { status: 'conflict'; current: ManualRecord | null }
+  | { status: 'error'; message: string };
+
+export async function pushManual(payload: object, baseRevision: number | null, fetchImpl: FetchLike = fetch): Promise<ManualPush> {
+  let r: Response;
+  try {
+    r = await fetchImpl('/api/manual', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ baseRevision, payload }),
+    });
+  } catch {
+    return { status: 'error', message: 'could not reach the server' };
+  }
+  let body: { revision?: number; savedAt?: string; error?: string; current?: unknown } = {};
+  try { body = await r.json(); } catch { /* fall through */ }
+  if (r.status === 409) return { status: 'conflict', current: isRecord(body.current) ? body.current : null };
+  if (r.ok && Number.isInteger(body.revision) && typeof body.savedAt === 'string') return { status: 'saved', revision: body.revision!, savedAt: body.savedAt };
+  return { status: 'error', message: body.error ?? `server answered ${r.status}` };
+}

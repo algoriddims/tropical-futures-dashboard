@@ -2,12 +2,18 @@ import type { ReactNode } from 'react';
 import { useTerminal } from '@/terminal/useTerminal';
 import type { DeskKey } from '@/terminal/desks';
 import {
-  channelStats, monthlyBurn, runwayMonths, buildMoves, trailing30dRevenue, daysUntil, burnSource,
+  monthlyBurn, runwayMonths, daysUntil, burnSource,
   netCash, cardOwed, monthToDateSales,
 } from '@/game/engine';
 import { money, pct, plural } from '@/game/format';
 import { InlineNumber } from '@/components/InlineEdit';
 import { AccountLines } from '@/components/BankAccounts';
+import { useAnalytics } from './analytics/useAnalytics';
+import { PerformanceSummary } from './analytics/Performance';
+import { ExceptionsPanel } from './analytics/Exceptions';
+import { ProductTable } from './analytics/Products';
+import { ChannelComparison } from './analytics/Channels';
+import { formatRange } from '@/analytics/period';
 
 const DESK_NAMES: Partial<Record<DeskKey, string>> = {
   o: 'orders', a: 'ads', i: 'inventory', p: 'pipeline', l: 'shops', c: 'costs', n: 'alerts', g: 'goals', f: 'import feed',
@@ -57,19 +63,17 @@ function Bar({ pct: p, color }: { pct: number; color: string }) {
   );
 }
 
-const RANGE_LABEL: Record<number, string> = { 1: 'TODAY', 7: 'LAST 7 DAYS', 30: 'LAST 30 DAYS' };
 
 export default function StatusDesk() {
-  const { data, metrics, notices, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors, range } = useTerminal();
+  const { data, metrics, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors, range } = useTerminal();
+  const an = useAnalytics();
   if (!data || !metrics) return null;
 
-  const redNotices = notices.filter((n) => n.tier === 'red');
   const synced = !!data.accounts?.length;
   const cash = netCash(data);
   const owed = cardOwed(data);
   const burn = monthlyBurn(data);
   const runway = runwayMonths(data);
-  const moves = buildMoves(data, metrics, trailing30dRevenue(data));
   const readyBuilds = data.pipeline.filter((p) => p.status === 'READY').length;
   const dropDays = data.nextDrop ? daysUntil(data.nextDrop.date) : null;
   const dropRetail = data.pipeline
@@ -87,7 +91,6 @@ export default function StatusDesk() {
   // last complete month of Meta billing seen on the bank/card (not attributed ad spend)
   const lastFull = [...(data.cashflow ?? [])].reverse().find((m) => !m.partial);
   const metaBilling = lastFull?.spend.ADS;
-  const channelTotal = data.channels.reduce((s, c) => s + c.revenue, 0);
   const notes = data.meta?.notes ?? [];
 
   return (
@@ -105,16 +108,24 @@ export default function StatusDesk() {
         </div>
       )}
 
-      {!imported && !storedSnapshotErrors && (
-        <div className="window">
-          <div className="window-body font-display text-sm tier-amber">
-            SAMPLE DATA — INVENTED NUMBERS FOR LAYOUT ONLY, NOT TROPICAL FUTURES RESULTS. IMPORT A SYNC TO SEE REAL DATA.
-          </div>
+
+      {/* business decisions first: performance vs prior, then this week's exceptions */}
+      <PerformanceSummary state={an} />
+      <ExceptionsPanel state={an} />
+
+      {an.kind === 'ok' && (
+        <div className="grid grid-cols-1 gap-2 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Window title={`PRODUCTS · ${formatRange(an.view.cmp.current)}`} right={<Jump to="i" />}>
+            <ProductTable v={an.view} limit={8} />
+          </Window>
+          <Window title="DTC VS WHOLESALE" right={<Jump to="l" />}>
+            <ChannelComparison v={an.view} />
+          </Window>
         </div>
       )}
 
-      {/* where you stand: cash, sales vs goal, burn, what needs doing */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {/* cash, the monthly goal and burn */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         <Window title="CASH ON HAND" right={synced ? 'BANK − CARD OWED' : 'MANUAL ENTRY'}>
           {synced ? (
             <>
@@ -194,50 +205,7 @@ export default function StatusDesk() {
           </div>
         </Window>
 
-        <Window title="NEEDS ATTENTION" right={<Jump to="n" />}>
-          {redNotices.length === 0 ? (
-            <div className="font-display text-sm tier-green">NOTHING RED RIGHT NOW.</div>
-          ) : (
-            <ul className="space-y-1">
-              {redNotices.slice(0, 4).map((n) => (
-                <li key={n.id}>
-                  <button onClick={() => setDesk(n.desk as DeskKey)} className="w-full text-left">
-                    <span className="tier-red">▲ </span>
-                    <span className="warm text-[0.82rem]">{n.text}</span>
-                  </button>
-                </li>
-              ))}
-              {redNotices.length > 4 && <li className="stat-sub">+{redNotices.length - 4} MORE IN ALERTS</li>}
-            </ul>
-          )}
-        </Window>
       </div>
-
-      {/* top moves */}
-      <Window title="TOP MOVES" right="RANKED BY MONEY AT STAKE">
-        {moves.length === 0 ? (
-          <div className="font-display text-sm dim">NOTHING URGENT RIGHT NOW.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {moves.map((mv, i) => (
-              <button
-                key={mv.id}
-                onClick={() => setDesk(mv.desk as DeskKey)}
-                className="tape-row w-full text-left"
-              >
-                <span className={`tier-${mv.tier} shrink-0 font-display`}>{i + 1}.</span>
-                <span className="flex-1 min-w-0">
-                  <span className="warm block">{mv.text}</span>
-                  <span className="stat-sub block">{mv.detail}</span>
-                </span>
-                <span className={`font-display text-sm shrink-0 ${mv.tier === 'red' ? 'tier-red' : mv.tier === 'amber' ? 'tier-amber' : 'palm'}`}>
-                  {money(mv.impact)}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </Window>
 
       {/* drop countdown */}
       {data.nextDrop && dropDays !== null && dropDays >= 0 && (
@@ -255,66 +223,12 @@ export default function StatusDesk() {
       )}
 
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <Window title="SHOPIFY SALES" right={<span className="flex items-center gap-2">{RANGE_LABEL[range] ?? `${range}D`} <Jump to="o" /></span>}>
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <BigStat label="NET REVENUE" value={money(metrics.revenue)} />
-            <div className="text-right">
-              <div className={`font-display text-xl ${metrics.revenueDeltaPct === null ? 'dim' : metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
-                {metrics.revenueDeltaPct === null ? '—' : `${metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} ${pct(Math.abs(metrics.revenueDeltaPct))}`}
-              </div>
-              <div className="stat-sub">{metrics.revenueDeltaPct === null ? 'TOO FEW ORDERS TO COMPARE' : `VS PREVIOUS ${range === 1 ? 'DAY' : `${range} DAYS`}`}</div>
-              <div className="stat-sub mt-1">{plural(metrics.orders, 'ORDER')} · AOV {metrics.orders ? money(metrics.aov) : '—'}</div>
-            </div>
-          </div>
-        </Window>
-
-        <Window title="INVENTORY" right={<Jump to="i" />}>
-          <div className="grid grid-cols-2 gap-3">
-            <BigStat label="UNITS IN STOCK" value={metrics.inventoryUnits.toLocaleString('en-US')} size="text-3xl" />
-            <BigStat label="SOLD, 12 MONTHS" value={pct(metrics.overallSellThrough * 100)} tone="palm" size="text-3xl" sub="OF STOCK + UNITS SOLD" />
-            <BigStat
-              label="VALUE AT COST"
-              value={money(metrics.inventoryCost)}
-              tone="dim"
-              size="text-3xl"
-              sub={metrics.inventoryUnitsWithoutCost > 0 ? `EXCL. ${plural(metrics.inventoryUnitsWithoutCost, 'UNIT')} WITHOUT COST` : undefined}
-            />
-            <BigStat label="VALUE AT RETAIL" value={money(metrics.inventoryRetail)} tone="water" size="text-3xl" />
-          </div>
-        </Window>
-
-        <Window title="TRAFFIC" right={RANGE_LABEL[range] ?? `${range}D`}>
+        <Window title="TRAFFIC" right={`LAST ${range} COMPLETE DAYS`}>
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="SESSIONS" size="text-3xl" value={metrics.guests !== null ? metrics.guests.toLocaleString('en-US') : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
             <BigStat label="CONVERSION" size="text-3xl" value={metrics.conversionRate !== null ? pct(metrics.conversionRate, 1) : '—'} tone="tropic-pink" sub={metrics.conversionRate === null ? 'NEEDS SESSIONS' : undefined} />
             <BigStat label="RETURNING CUSTOMERS" size="text-3xl" value={data.repeatRate !== undefined ? pct(data.repeatRate * 100) : '—'} tone="palm" sub={data.repeatRate === undefined ? 'NOT IN DATA' : 'AS REPORTED, 90 DAYS'} />
             <BigStat label="REFUND RATE" size="text-3xl" value={data.refundRate !== undefined ? pct(data.refundRate * 100, 1) : '—'} tone={data.refundRate !== undefined && data.refundRate > 0.05 ? 'tier-red' : 'dim'} sub={data.refundRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
-          </div>
-        </Window>
-
-        <Window title="STORE LOCATIONS" right={<Jump to="l" />}>
-          <div className="space-y-2">
-            {data.channels.map((c) => {
-              const st = channelStats(c, data.products);
-              const period = c.revenueDays ? `${c.revenueDays}D` : 'PERIOD UNKNOWN';
-              return (
-                <div key={c.name}>
-                  <div className="flex flex-wrap justify-between gap-x-3 text-[0.8rem]">
-                    <span className="warm">{c.name} <span className="dim">· {c.location}</span></span>
-                    <span className="font-display">
-                      <span className="phosphor">{money(c.revenue)}</span> <span className="dim">SALES {period}</span>
-                    </span>
-                  </div>
-                  <div className="stat-sub">
-                    {st.onHand.toLocaleString('en-US')} IN STOCK · {c.type === 'ONLINE' ? `${pct(st.sellThrough * 100)} SOLD OVER 12 MONTHS (ALL CHANNELS)` : `${pct(st.sellThrough * 100)} OF ALLOCATED SOLD`}
-                  </div>
-                  {data.channels.length > 1 && channelTotal > 0 && <Bar pct={(c.revenue / channelTotal) * 100} color="var(--water)" />}
-                </div>
-              );
-            })}
-            {data.channels.every((c) => c.type === 'ONLINE') && (
-              <div className="stat-sub">NO STOCKIST OR CONSIGNMENT RECORDS YET.</div>
-            )}
           </div>
         </Window>
 
