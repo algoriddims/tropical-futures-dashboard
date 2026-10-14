@@ -406,8 +406,8 @@ canvas.pixelated { image-rendering: pixelated; }
 :is([data-look='paper'], [data-look='dark']) .font-display.text-xl { font-size: 1.05rem; }
 :is([data-look='paper'], [data-look='dark']) .font-display.text-lg { font-size: 0.9rem; }
 :is([data-look='paper'], [data-look='dark']) .font-display.text-base { font-size: 0.82rem; }
-:is([data-look='paper'], [data-look='dark']) .font-display.text-sm { font-size: 0.72rem; letter-spacing: 0.03em; }
-:is([data-look='paper'], [data-look='dark']) .font-display.text-xs { font-size: 0.66rem; letter-spacing: 0.04em; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-sm { font-size: 0.78rem; letter-spacing: 0.03em; }
+:is([data-look='paper'], [data-look='dark']) .font-display.text-xs { font-size: 0.75rem; letter-spacing: 0.04em; }
 
 /* Blocks: hairline square boxes, quiet label row, more air. */
 :is([data-look='paper'], [data-look='dark']) .window,
@@ -427,7 +427,8 @@ canvas.pixelated { image-rendering: pixelated; }
   letter-spacing: 0.06em;
   padding: 0.55rem 0.85rem;
 }
-:is([data-look='paper'], [data-look='dark']) .window-head .wh-title { color: var(--vhs-white); }
+:is([data-look='paper'], [data-look='dark']) .window-head .wh-title { color: var(--vhs-white); font-size: 0.78rem; }
+:is([data-look='paper'], [data-look='dark']) .window-head .wh-note { font-size: 0.72rem; }
 :is([data-look='paper'], [data-look='dark']) .window-head .wh-title::before { content: none; }
 :is([data-look='paper'], [data-look='dark']) .window-body { padding: 0.85rem; }
 
@@ -435,7 +436,7 @@ canvas.pixelated { image-rendering: pixelated; }
 :is([data-look='paper'], [data-look='dark']) .tape-row:hover { background: var(--q-hover); transform: none; }
 
 :is([data-look='paper'], [data-look='dark']) .badge {
-  font-size: 0.64rem;
+  font-size: 0.72rem;
   font-weight: 500;
   letter-spacing: 0.04em;
   padding: 0.05rem 0.4rem;
@@ -448,7 +449,7 @@ canvas.pixelated { image-rendering: pixelated; }
   background: var(--crt-dark);
   border-color: var(--crt-line);
   color: var(--vhs-dim);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 :is([data-look='paper'], [data-look='dark']) .keycap-active,
@@ -479,6 +480,25 @@ canvas.pixelated { image-rendering: pixelated; }
 
 /* Modals dim the page lightly instead of blacking it out. */
 :is([data-look='paper'], [data-look='dark']) .bg-black\/80 { background: var(--q-overlay); }
+
+/* ── shared text roles (all looks) ───────────────────────── */
+.wh-title { font: inherit; margin: 0; }
+.wh-note { color: var(--vhs-dim); display: inline-flex; align-items: center; gap: 0.4rem; text-align: right; }
+.stat-label { font-size: 0.75rem; letter-spacing: 0.05em; color: var(--vhs-dim); text-transform: uppercase; }
+.stat-sub { font-size: 0.75rem; color: var(--vhs-dim); margin-top: 0.15rem; }
+.tape-row .stat-sub { margin-top: 0; }
+
+/* Keyboard focus is always visible. */
+button:focus-visible, summary:focus-visible, [tabindex]:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--q-strong, var(--phosphor));
+  outline-offset: 2px;
+}
+
+/* Touch: 44px targets. */
+@media (pointer: coarse) {
+  .tap, header button, .tape-row, .window-body button, summary { min-height: 44px; }
+  .keycap.tap { min-width: 44px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .crt-scanlines, .glitch-band, .ticker-track, .crt-flicker { animation: none !important; }

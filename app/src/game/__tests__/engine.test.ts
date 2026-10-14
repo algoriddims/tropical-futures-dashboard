@@ -90,8 +90,13 @@ describe('sessions and conversion are measured or unavailable (contract case 7)'
     const m = computeMetrics(d, 1);
     expect(m.revenueDeltaPct).toBeNull();
     expect(m.ratingParts.find((p) => p.label === 'SALES MOMENTUM')?.score).toBeNull();
-    const two = { ...clone(fixtureData), days: [day('09-01', 2), day('09-02', 3)] };
+    const two = { ...clone(fixtureData), days: [day('09-01', 4), day('09-02', 6)] };
     expect(computeMetrics(two, 1).revenueDeltaPct).toBeCloseTo(50);
+  });
+
+  it('a % change needs a few orders on both sides — 4 vs 2 orders is noise, not +100%', () => {
+    const few = { ...clone(fixtureData), days: [day('09-01', 2), day('09-02', 4)] };
+    expect(computeMetrics(few, 1).revenueDeltaPct).toBeNull();
   });
 
   it('missing refund/repeat rates leave GUEST HAPPINESS out of the rating instead of scoring it', () => {

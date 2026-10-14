@@ -1,7 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { ParkData, Notice } from '@/game/types';
-import type { Metrics } from '@/game/engine';
+import type { ParkData } from '@/game/types';
 import { computeMetrics, buildNotices } from '@/game/engine';
 import { FixtureSource } from '@/game/source';
 import {
@@ -15,79 +14,10 @@ import { diffSnapshots } from '@/game/engine';
 import type { SyncDelta } from '@/game/engine';
 import { loadLook, nextLook, saveLook } from './look';
 import type { Look } from './look';
-
-export type DeskKey = 's' | 'p' | 'i' | 'l' | 'o' | 'a' | 'n' | 'c' | 'g' | 'f';
-
-export const DESKS: { key: DeskKey; label: string; title: string }[] = [
-  { key: 's', label: 'STATUS', title: 'OVERVIEW' },
-  { key: 'p', label: 'PIPELINE', title: 'PRODUCTION PIPELINE' },
-  { key: 'g', label: 'GOALS', title: 'PLANNING' },
-  { key: 'i', label: 'INVENTORY', title: 'INVENTORY' },
-  { key: 'l', label: 'SHOPS', title: 'STORE LOCATIONS' },
-  { key: 'c', label: 'COSTS', title: 'FINANCES / BURN' },
-  { key: 'o', label: 'ORDERS', title: 'ORDERS / CASH' },
-  { key: 'a', label: 'ADS', title: 'AD CAMPAIGNS' },
-  { key: 'n', label: 'ALERTS', title: 'ALERTS' },
-  { key: 'f', label: 'IMPORTS', title: 'IMPORT FEED' },
-];
-
-export interface LiveEvent {
-  id: number;
-  text: string;
-  amount: number;
-}
-
-interface TerminalState {
-  data: ParkData | null;
-  metrics: Metrics | null;
-  notices: Notice[];
-  desk: DeskKey;
-  setDesk: (d: DeskKey) => void;
-  range: number;
-  setRange: (r: number) => void;
-  helpOpen: boolean;
-  setHelpOpen: (b: boolean) => void;
-  /** Visual look — presentational only. */
-  look: Look;
-  toggleLook: () => void;
-  /** Simulated order stream — sample mode only, never added to bank cash. */
-  liveEvents: LiveEvent[];
-  sourceName: string;
-  /** Mutate the manual slices of ParkData (bank, costs, planning inputs); persisted to localStorage. */
-  updateData: (mut: (d: ParkData) => ParkData) => void;
-  /** Record a hand correction to a stockist shelf count; persisted, and checked against later imports. */
-  editShelf: (channel: string, productId: string, field: ShelfField, value: number) => void;
-  /** Resolve a shelf edit: 'sync' drops it, 'mine' keeps it re-based on the current sync value. */
-  resolveShelfEdit: (key: string, keep: 'sync' | 'mine') => void;
-  shelfStatus: ShelfEditStatus[];
-  /** False when the last write to localStorage failed — edits then last only this session. */
-  storageOk: boolean;
-  /** True when rendering an imported sync snapshot rather than fixture data. */
-  imported: boolean;
-  /** ISO timestamp of the current imported snapshot (null on fixture data). */
-  importedAt: string | null;
-  /** Validation errors when the stored snapshot could not be loaded (sample data shown instead). */
-  storedSnapshotErrors: string[] | null;
-  /** Delta vs the previous sync (null on first import / fixture data). */
-  delta: SyncDelta | null;
-  /**
-   * Where imports go: 'server' = the shared snapshot on the hosting server
-   * (every device sees it); 'local' = this browser only; 'checking' = not yet known.
-   */
-  shared: 'checking' | 'server' | 'local';
-  /** Problem with the shared snapshot (unreadable or failed validation), if any. */
-  sharedError: string[] | null;
-  /** Re-fetch the shared snapshot from the server. */
-  reloadShared: () => Promise<void>;
-  /** Paste a full park-data.json; resolves to error lines, or null on success. Uploads when shared. */
-  importData: (raw: string) => Promise<string[] | null>;
-  /** Drop the imported snapshot and return to sample data. */
-  clearImport: () => void;
-  /** JSON of everything stored in this browser, for backup before clearing/re-importing. */
-  exportStored: () => string;
-}
-
-const Ctx = createContext<TerminalState | null>(null);
+import { DESKS } from './desks';
+import type { DeskKey } from './desks';
+import { TerminalCtx } from './useTerminal';
+import type { LiveEvent, TerminalState } from './useTerminal';
 
 const source = new FixtureSource(); // ← swap for ShopifyAdminSource / MetaMarketingSource
 
@@ -183,6 +113,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const updateData = useCallback((mut: (d: ParkData) => ParkData) => {
     if (!data) return;
+    // extractManual leaves out a synced bank balance, so it can't be saved as a hand entry
     commitManual({ ...manual, ...extractManual(mut(data)) });
   }, [data, manual, commitManual]);
 
@@ -240,6 +171,15 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
 
   const exportStored = useCallback(() => exportBackup(), []);
 
+  const forgetDevice = useCallback(() => {
+    try {
+      for (const k of Object.keys(localStorage)) if (k.startsWith('tfi-')) localStorage.removeItem(k);
+    } catch {
+      // storage blocked: nothing was stored either
+    }
+    window.location.reload();
+  }, []);
+
   const toggleLook = useCallback(() => {
     setLook((l) => {
       const next = nextLook(l);
@@ -256,7 +196,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   // Never runs on imported syncs, and never touches cash.
   const hasData = data !== null;
   useEffect(() => {
-    if (!hasData || imported) return;
+    // Only in local sample mode — never on the hosted site, not even for the
+    // moment before the shared snapshot arrives.
+    if (!hasData || imported || shared !== 'local') return;
     let timer: number;
     const tick = () => {
       const item = LIVE_ITEMS[Math.floor(Math.random() * LIVE_ITEMS.length)];
@@ -265,7 +207,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     };
     timer = window.setTimeout(tick, 3500);
     return () => window.clearTimeout(timer);
-  }, [hasData, imported]);
+  }, [hasData, imported, shared]);
 
   const metrics = useMemo(() => (data ? computeMetrics(data, range) : null), [data, range]);
   const notices = useMemo(() => (data && metrics ? buildNotices(data, metrics) : []), [data, metrics]);
@@ -276,8 +218,9 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
+      // A modal dialog owns the keyboard (it handles its own Esc).
+      if (document.querySelector('[aria-modal="true"]')) return;
       if (k === '?') { setHelpOpen((h) => !h); return; }
-      if (k === 'escape') { setHelpOpen(false); return; }
       if (k === 't') { toggleLook(); return; }
       const deskHit = DESKS.find((d) => d.key === k);
       if (deskHit) { setDesk(deskHit.key); return; }
@@ -298,13 +241,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
     helpOpen, setHelpOpen, look, toggleLook, liveEvents,
     sourceName: imported ? 'IMPORTED SYNC' : source.name,
     updateData, editShelf, resolveShelfEdit, shelfStatus, storageOk,
-    imported, importedAt, storedSnapshotErrors, delta, shared, sharedError, reloadShared, importData, clearImport, exportStored,
+    imported, importedAt, storedSnapshotErrors, delta, shared, sharedError, reloadShared, importData, clearImport, exportStored, forgetDevice,
   };
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
-
-export function useTerminal(): TerminalState {
-  const v = useContext(Ctx);
-  if (!v) throw new Error('useTerminal outside provider');
-  return v;
+  return <TerminalCtx.Provider value={value}>{children}</TerminalCtx.Provider>;
 }

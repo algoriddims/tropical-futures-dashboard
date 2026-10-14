@@ -1,9 +1,9 @@
 import type { BankAccount, CashMonth, CashInKind, SpendKind } from '@/game/types';
 import { monthIn, monthSpend } from '@/game/engine';
+import { money as fmt } from '@/game/format';
 
-const money = (n: number) =>
-  `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const whole = (n: number) => `${n < 0 ? '−' : ''}$${Math.round(Math.abs(n)).toLocaleString()}`;
+const money = (n: number) => fmt(n, { cents: true });
+const whole = (n: number) => fmt(n);
 
 /** One line per synced account: cash held, or amount owed on a card. */
 export function AccountLines({ accounts }: { accounts: BankAccount[] }) {
@@ -51,7 +51,7 @@ export function CashFlowTable({ months }: { months: CashMonth[] }) {
   const cell = (v: number | undefined) => (v ? whole(v) : '—');
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[0.74rem]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+      <table className="w-full text-[0.78rem] [&_td+td]:whitespace-nowrap [&_td+td]:pl-2 [&_th]:whitespace-nowrap" style={{ fontVariantNumeric: 'tabular-nums' }}>
         <thead>
           <tr className="border-b border-[var(--crt-mid)] text-left font-display text-xs dim">
             <th className="py-1 font-normal" />

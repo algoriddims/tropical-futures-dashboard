@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { DESKS, useTerminal } from './TerminalContext';
+import { useTerminal } from './useTerminal';
+import { DESKS } from './desks';
 import { ImportModal } from './ImportModal';
-import { daysUntil } from '@/game/engine';
+import { Dialog } from './Dialog';
+import { daysUntil, netCash } from '@/game/engine';
+import { money } from '@/game/format';
 import { describeFreshness } from '@/game/freshness';
 import { nextLook } from './look';
 
@@ -33,18 +36,26 @@ function Palm({ size = 18 }: { size?: number }) {
 export function TopBar() {
   const { desk, setDesk, range, setRange, setHelpOpen, imported, look, toggleLook } = useTerminal();
   const [importOpen, setImportOpen] = useState(false);
+  // On phones the tab row scrolls: keep the current desk's tab in view.
+  useEffect(() => {
+    document.querySelector('header nav [aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [desk]);
   return (
-    <header className="flex items-stretch border-b border-[var(--crt-mid)] bg-[var(--crt-dark)]">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-r border-[var(--crt-mid)]">
+    <header className="flex flex-wrap items-stretch border-b border-[var(--crt-mid)] bg-[var(--crt-dark)] lg:flex-nowrap">
+      <div className="flex items-center gap-2 px-3 py-1.5 lg:border-r border-[var(--crt-mid)]">
         <Palm />
-        <span className="font-display text-xl phosphor crt-flicker tracking-wide">TROPICAL FUTURES</span>
+        {/* the wordmark yields to the desk tabs on mid-size screens (palm mark stays) */}
+        <span className="font-display text-xl phosphor crt-flicker tracking-wide lg:hidden min-[1400px]:inline">TROPICAL FUTURES</span>
         <span className="hidden 2xl:inline font-display text-xl tropic-pink">TERMINAL</span>
       </div>
-      <nav className="flex items-center gap-1 px-2 overflow-x-auto">
+      {/* phones: its own full-width row that scrolls sideways; desktop: inline */}
+      <nav aria-label="Desks" className="order-last flex w-full items-center gap-1 overflow-x-auto border-t border-[var(--crt-mid)] px-2 lg:order-none lg:w-auto lg:border-t-0">
         {DESKS.map((d) => (
           <button
             key={d.key}
             onClick={() => setDesk(d.key)}
+            aria-current={desk === d.key ? 'page' : undefined}
+            aria-label={`${d.label} (${d.key.toUpperCase()})`}
             className="keycap-btn flex shrink-0 items-center gap-1 px-1.5 py-1"
           >
             <span className={`keycap ${desk === d.key ? 'keycap-active' : ''}`}>{d.key.toUpperCase()}</span>
@@ -54,22 +65,24 @@ export function TopBar() {
           </button>
         ))}
       </nav>
-      <div className="ml-auto flex items-center gap-1 px-2 border-l border-[var(--crt-mid)]">
-        {RANGES.map((r) => (
-          <button key={r.key} onClick={() => setRange(r.days)} className="keycap-btn flex items-center gap-1 px-1.5 py-1">
-            <span className={`keycap ${range === r.days ? 'keycap-active' : ''}`}>{r.key}</span>
-            <span className={`keycap-label font-display text-sm ${range === r.days ? 'text-[var(--vhs-white)]' : 'dim'}`}>{r.label}</span>
-          </button>
-        ))}
-        <button onClick={() => setImportOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="IMPORT SYNC DATA">
+      <div className="ml-auto flex items-center gap-1 px-2 lg:border-l border-[var(--crt-mid)]">
+        <div role="group" aria-label="Date range" className="flex items-center gap-1">
+          {RANGES.map((r) => (
+            <button key={r.key} onClick={() => setRange(r.days)} aria-pressed={range === r.days} aria-label={`Range ${r.label}`} title={`RANGE ${r.label}`} className="keycap-btn flex items-center gap-1 px-1.5 py-1">
+              <span className={`keycap ${range === r.days ? 'keycap-active' : ''}`}>{r.key}</span>
+              <span className={`keycap-label hidden 2xl:inline font-display text-sm ${range === r.days ? 'text-[var(--vhs-white)]' : 'dim'}`}>{r.label}</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setImportOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="IMPORT SYNC DATA" aria-label="Import sync data">
           <span className={`keycap ${imported ? 'keycap-active' : ''}`}>⇪</span>
-          <span className={`keycap-label font-display text-sm ${imported ? 'tier-green' : 'dim'}`}>IMPORT</span>
+          <span className={`keycap-label hidden xl:inline font-display text-sm ${imported ? 'tier-green' : 'dim'}`}>IMPORT</span>
         </button>
-        <button onClick={toggleLook} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="SWITCH LOOK (T)">
+        <button onClick={toggleLook} className="keycap-btn flex items-center gap-1 px-1.5 py-1" title="SWITCH LOOK (T)" aria-label={`Switch look to ${nextLook(look)}`}>
           <span className="keycap">T</span>
-          <span className="keycap-label font-display text-sm dim">{nextLook(look).toUpperCase()}</span>
+          <span className="keycap-label hidden 2xl:inline font-display text-sm dim">{nextLook(look).toUpperCase()}</span>
         </button>
-        <button onClick={() => setHelpOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1">
+        <button onClick={() => setHelpOpen(true)} className="keycap-btn flex items-center gap-1 px-1.5 py-1" aria-label="Keyboard shortcuts">
           <span className="keycap">?</span>
         </button>
       </div>
@@ -86,6 +99,7 @@ export function StatusBar() {
     return () => window.clearInterval(t);
   }, []);
   const deskMeta = DESKS.find((d) => d.key === desk);
+  const cash = data ? netCash(data) : null;
   const redCount = notices.filter((n) => n.tier === 'red').length;
   const fresh = describeFreshness({ imported, importedAt, meta: data?.meta, now });
   const badgeCls = fresh.mode === 'sample' ? 'tier-amber' : fresh.stale ? 'tier-amber' : 'tier-green';
@@ -93,27 +107,26 @@ export function StatusBar() {
   const dropDays = data?.nextDrop ? daysUntil(data.nextDrop.date) : null;
   return (
     <footer className="flex items-center gap-4 border-t border-[var(--crt-mid)] bg-[var(--crt-dark)] px-3 py-1 font-display text-base overflow-hidden whitespace-nowrap">
-      <span className="phosphor">
-        BANK {data ? `${data.bankBalance < 0 ? '−' : ''}$${Math.abs(data.bankBalance).toLocaleString()}` : '—'}
+      <span className={cash !== null && cash < 0 ? 'tier-red' : 'phosphor'} title="BANK CASH MINUS CARD OWED">
+        CASH {data ? money(cash) : '—'}
       </span>
-      <span className="warm">SCORE {metrics?.rating ?? '—'} · {metrics?.ratingBand ?? ''}</span>
       {data?.nextDrop && dropDays !== null && dropDays >= 0 && (
         <span className={dropDays <= 3 ? 'tier-red' : 'tropic-pink'}>
           {dropDays === 0 ? 'DROP DAY' : `D-${dropDays}`} · {data.nextDrop.name}
         </span>
       )}
-      <span className="dim">SESSIONS {metrics?.guests != null ? metrics.guests.toLocaleString() : '—'}</span>
+      <span className="dim hidden md:inline">SESSIONS {metrics?.guests != null ? metrics.guests.toLocaleString('en-US') : '—'}</span>
       {redCount > 0 && <span className="tier-red">▲ {redCount} RED</span>}
-      <span className="dim">[{deskMeta?.title}]</span>
+      <span className="dim hidden md:inline">[{deskMeta?.title}]</span>
       <span className="ml-auto flex items-center gap-3">
         {fresh.items.map((f) => (
-          <span key={f.label} className={f.tone === 'ok' ? 'dim' : 'tier-amber'}>
+          <span key={f.label} className={`hidden xl:inline ${f.tone === 'ok' ? 'dim' : 'tier-amber'}`}>
             {f.label} {f.text}
           </span>
         ))}
-        {shared === 'server' && <span className="dim" title="DATA COMES FROM YOUR SERVER, SHARED ACROSS DEVICES">SHARED</span>}
+        {shared === 'server' && <span className="dim hidden md:inline" title="DATA COMES FROM YOUR SERVER, SHARED ACROSS DEVICES">SHARED</span>}
         <span className={`badge ${badgeCls}`}>{badgeText}</span>
-        <span className="warm">{now.toLocaleTimeString('en-GB')}</span>
+        <span className="warm hidden sm:inline">{now.toLocaleTimeString('en-GB')}</span>
       </span>
     </footer>
   );
@@ -130,21 +143,19 @@ export function HelpOverlay() {
     ['ESC', 'CLOSE'],
   ];
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80"
-      onClick={() => setHelpOpen(false)}
-    >
-      <div className="panel w-[380px] desk-enter">
-        <div className="panel-head">KEYMAP</div>
-        <div className="p-3 space-y-2">
-          {rows.map(([k, label]) => (
-            <div key={k} className="flex items-center gap-3">
-              <span className="keycap">{k}</span>
-              <span className="font-display text-lg warm">{label}</span>
-            </div>
-          ))}
-        </div>
+    <Dialog label="Keyboard shortcuts" onClose={() => setHelpOpen(false)} className="max-w-[380px]">
+      <div className="panel-head">
+        <span>KEYMAP</span>
+        <button onClick={() => setHelpOpen(false)} className="keycap tap" aria-label="Close">ESC</button>
       </div>
-    </div>
+      <dl className="p-3 space-y-2">
+        {rows.map(([k, label]) => (
+          <div key={k} className="flex items-center gap-3">
+            <dt className="keycap">{k}</dt>
+            <dd className="font-display text-lg warm">{label}</dd>
+          </div>
+        ))}
+      </dl>
+    </Dialog>
   );
 }

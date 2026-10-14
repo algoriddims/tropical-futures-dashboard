@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useTerminal } from './TerminalContext';
+import { useTerminal } from './useTerminal';
+import { Dialog } from './Dialog';
 
 // Paste-in bridge for the external sync (Claude Code writes park-data.json,
 // you paste its contents here). Keeps the static build usable with real data
 // before any server exists. Manual slices and shelf edits survive the import.
 // Mounted only while open, so each opening starts from a clean state.
 export function ImportModal({ onClose }: { onClose: () => void }) {
-  const { importData, clearImport, imported, exportStored, shared, sharedError, reloadShared } = useTerminal();
+  const { importData, clearImport, imported, exportStored, shared, sharedError, reloadShared, forgetDevice } = useTerminal();
   const [raw, setRaw] = useState('');
   const [errors, setErrors] = useState<string[] | null>(null);
   const [ok, setOk] = useState(false);
@@ -35,12 +36,7 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80"
-      onClick={onClose}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
-    >
-      <div className="panel w-[580px] desk-enter" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Import sync data">
+    <Dialog label="Import sync data" onClose={onClose} className="max-w-[580px]">
         <div className="panel-head">IMPORT SYNC DATA</div>
         <div className="space-y-3 p-4">
           <p className="text-[0.75rem] leading-relaxed dim">
@@ -63,7 +59,8 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
           <textarea
-            autoFocus
+            data-autofocus
+            aria-label="park-data.json contents"
             value={raw}
             onChange={(e) => { setRaw(e.target.value); setErrors(null); }}
             rows={10}
@@ -77,8 +74,8 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
             </div>
           )}
           {ok && <div className="font-display text-sm tier-green">✓ {shared === 'server' ? 'UPLOADED — ALL YOUR DEVICES WILL LOAD THIS' : 'SYNC DATA LOADED IN THIS BROWSER'}</div>}
-          <div className="flex items-center justify-between">
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
               <button onClick={doExport} className="keycap-btn px-2 py-1 font-display text-sm dim" title="DOWNLOAD EVERYTHING STORED IN THIS BROWSER">
                 EXPORT BACKUP
               </button>
@@ -99,6 +96,18 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
                   CLEAR IMPORT — BACK TO SAMPLE DATA
                 </button>
               )}
+              {shared === 'server' && (
+                <button
+                  onClick={() => {
+                    if (!window.confirm('Forget this device? This removes the cached business data AND your typed-in entries (cost lines, goal, planning inputs, shelf corrections) from this browser. The shared data on the server is not touched. Close the browser afterwards to sign out.')) return;
+                    forgetDevice();
+                  }}
+                  className="keycap-btn px-2 py-1 font-display text-sm tier-amber"
+                  title="REMOVE EVERYTHING THIS BROWSER STORED"
+                >
+                  FORGET THIS DEVICE
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={onClose} className="keycap-btn px-2 py-1 font-display text-sm dim">CANCEL</button>
@@ -112,7 +121,6 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

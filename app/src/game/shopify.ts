@@ -20,6 +20,8 @@ export interface ShopifyProduct {
   title: string;
   productType: string;
   totalInventory: number;   // Shopify's own total, used as a transcription checksum
+  /** Product.tracksInventory; false = stock isn't tracked (made to order), so 0 isn't a sellout. Optional for older extracts. */
+  tracksInventory?: boolean;
   variants: ShopifyVariant[];
 }
 
@@ -116,6 +118,7 @@ export function buildShopifySnapshot(x: ShopifyExtract): ParkData {
       soldPrev7d: Math.max(0, x.unitsSoldPrev7d[p.title] ?? 0),
       soldTotal,
       published: true,
+      ...(p.tracksInventory === false ? { tracked: false } : {}),
     };
   });
 
@@ -161,6 +164,7 @@ export function buildShopifySnapshot(x: ShopifyExtract): ParkData {
     type: 'ONLINE',
     revenue: round2(online?.netSales ?? 0),
     orders: online?.orders ?? 0,
+    revenueDays: 30,
     stock: [],
   }];
   const others = x.channels30d.filter((c) => c.channel !== 'Online Store' && (c.orders > 0 || c.netSales !== 0));
@@ -200,7 +204,7 @@ export function buildShopifySnapshot(x: ShopifyExtract): ParkData {
     days,
     quests: [],
     costs: [],
-    bankBalance: 0,
+    bankBalance: null,
     growthTargetPct: 25,
     wholesalePct: 0.6,
     nextDrop: null,
@@ -223,8 +227,8 @@ export function buildShopifySnapshot(x: ShopifyExtract): ParkData {
  * costs, planning inputs) are dropped so an import never overwrites what the
  * user entered, and the sync never invents them.
  */
-export function toImportFile(d: ParkData): Omit<ParkData, 'bankBalance' | 'costs' | 'growthTargetPct' | 'wholesalePct' | 'nextDrop' | 'annualBudget'> {
+export function toImportFile(d: ParkData): Omit<ParkData, 'bankBalance' | 'costs' | 'growthTargetPct' | 'wholesalePct' | 'nextDrop' | 'annualBudget' | 'monthlySalesGoal'> {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { bankBalance, costs, growthTargetPct, wholesalePct, nextDrop, annualBudget, ...rest } = d;
+  const { bankBalance, costs, growthTargetPct, wholesalePct, nextDrop, annualBudget, monthlySalesGoal, ...rest } = d;
   return rest;
 }

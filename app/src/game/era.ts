@@ -119,7 +119,9 @@ export function buildEraLayer(x: EraExtract, now: Date = new Date(x.extractedAt)
       if (c.to === 'BANK_FEES' && /OVERDRAFT/i.test(t.description)) fees += -t.amount;
     }
   }
-  const nowMonth = now.toISOString().slice(0, 7);
+  // Calendar month in the business's local time (not UTC), so a sync run on
+  // the evening of the last day doesn't mark the next month as current.
+  const nowMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const firstMonth = x.from.slice(0, 7);
   const cashflow = [...months.values()]
     .sort((a, b) => a.month.localeCompare(b.month))

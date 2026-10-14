@@ -5,7 +5,12 @@
 // silently thrown away; only what the engine depends on is enforced.
 
 import { z } from 'zod';
+
 import type { ParkData } from './types';
+
+// No eval: the hosted page's Content-Security-Policy forbids it, and zod's
+// JIT probe would otherwise log a violation on every load.
+z.config({ jitless: true });
 
 const num = z.number().finite();
 const nonNeg = num.nonnegative();
@@ -27,6 +32,7 @@ const product = z.looseObject({
   soldTotal: count,
   published: z.boolean(),
   restockPolicy: z.enum(['REPLENISH', 'LIMITED']).optional(),
+  tracked: z.boolean().optional(),
 });
 
 const pipelineItem = z.looseObject({
@@ -47,6 +53,7 @@ const channel = z.looseObject({
   type: z.enum(['ONLINE', 'STOCKIST', 'POPUP']),
   revenue: num,
   orders: count,
+  revenueDays: count.positive().optional(),
   stock: z.array(z.looseObject({ productId: text.min(1), allocated: count, sold: count })),
 });
 
@@ -120,7 +127,8 @@ export const parkDataSchema = z.looseObject({
   // Manual slices: the terminal owns these and re-applies its own values
   // over any import (see overrides.ts), so a sync may omit them.
   costs: z.array(cost).default([]),
-  bankBalance: num.optional(),
+  bankBalance: num.nullable().optional(),
+  monthlySalesGoal: nonNeg.optional(),
   growthTargetPct: num.optional(),
   wholesalePct: rate.optional(),
   nextDrop: z.object({ name: text, date: isoDate }).nullable().optional(),
@@ -204,7 +212,9 @@ export function validateParkData(input: unknown): ValidationResult {
   const p = parsed.data;
   const data = {
     ...p,
-    bankBalance: p.bankBalance ?? 0,
+    // unknown stays unknown: no bank sync and nothing entered is null, not $0
+    bankBalance: p.bankBalance ?? null,
+    monthlySalesGoal: p.monthlySalesGoal ?? 0,
     growthTargetPct: p.growthTargetPct ?? 25,
     wholesalePct: p.wholesalePct ?? 0.6,
     nextDrop: p.nextDrop ?? null,

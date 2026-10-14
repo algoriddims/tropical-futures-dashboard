@@ -2,7 +2,7 @@
 // Who owns each part of ParkData:
 //
 //   MANUAL (terminal)  bankBalance, costs, growthTargetPct, wholesalePct,
-//                      nextDrop, annualBudget — entered by hand, persisted to
+//                      nextDrop, annualBudget, monthlySalesGoal — entered by hand, persisted to
 //                      localStorage, re-applied over every import.
 //   SYNC (import)      everything else — products, pipeline, channels, orders,
 //                      campaigns, days, quests, rates, meta. Replaced whole by
@@ -19,7 +19,7 @@ import { syncedCash } from './engine';
 import { validateParkData } from './validate';
 
 export const FIELD_OWNERSHIP = {
-  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget'],
+  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal'],
   syncWithOverride: ['channels[].stock[].allocated', 'channels[].stock[].sold'],
 } as const;
 
@@ -36,13 +36,15 @@ export interface ShelfEdit {
 }
 
 export interface ManualSlices {
-  bankBalance: number;
+  /** Hand-entered cash; only used when no bank accounts are synced. */
+  bankBalance: number | null;
   costs: CostItem[];
   /** planning inputs — strategy is yours, not the sync's */
   growthTargetPct: number;
   wholesalePct: number;
   nextDrop: { name: string; date: string } | null;
   annualBudget: number;
+  monthlySalesGoal: number;
   shelfEdits: ShelfEdit[];
 }
 
@@ -63,24 +65,31 @@ export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData 
   return {
     ...base,
     // Synced bank accounts own the balance when present; manual entry is the fallback.
-    bankBalance: syncedCash(base) ?? m.bankBalance ?? base.bankBalance,
+    bankBalance: syncedCash(base) ?? m.bankBalance ?? base.bankBalance ?? null,
     costs: m.costs ?? base.costs,
     growthTargetPct: m.growthTargetPct ?? base.growthTargetPct ?? 25,
     wholesalePct: m.wholesalePct ?? base.wholesalePct ?? 0.6,
     nextDrop: m.nextDrop !== undefined ? m.nextDrop : base.nextDrop ?? null,
     annualBudget: m.annualBudget ?? base.annualBudget ?? 0,
+    monthlySalesGoal: m.monthlySalesGoal ?? base.monthlySalesGoal ?? 0,
   };
 }
 
-/** The manual scalar slices of a ParkData (shelf edits live separately). */
-export function extractManual(d: ParkData): Omit<ManualSlices, 'shelfEdits'> {
+/**
+ * The manual scalar slices of a ParkData (shelf edits live separately).
+ * While bank accounts are synced, d.bankBalance is the bank's figure, not a
+ * hand entry — it's left out so it can't be saved as one and resurface,
+ * stale and undated, under a later sync without the bank.
+ */
+export function extractManual(d: ParkData): Partial<Omit<ManualSlices, 'shelfEdits'>> {
   return {
-    bankBalance: d.bankBalance,
+    ...(syncedCash(d) === null ? { bankBalance: d.bankBalance } : {}),
     costs: d.costs,
     growthTargetPct: d.growthTargetPct,
     wholesalePct: d.wholesalePct,
     nextDrop: d.nextDrop,
     annualBudget: d.annualBudget,
+    monthlySalesGoal: d.monthlySalesGoal ?? 0,
   };
 }
 

@@ -1,10 +1,11 @@
 import type React from 'react';
-import { useTerminal } from '@/terminal/TerminalContext';
+import { useTerminal } from '@/terminal/useTerminal';
 import { channelStats } from '@/game/engine';
 import type { Channel } from '@/game/types';
 import { shelfKey } from '@/game/overrides';
 import type { ShelfEditStatus, ShelfField } from '@/game/overrides';
 import { InlineNumber } from '@/components/InlineEdit';
+import { money, pct } from '@/game/format';
 
 const TYPE_TONE: Record<Channel['type'], string> = {
   ONLINE: 'tier-green',
@@ -37,14 +38,19 @@ export default function LocationsDesk() {
           <span className="wh-title">STOCK OUT IN THE WORLD</span>
           <span className="dim text-sm">STOCKISTS + POP-UPS</span>
         </div>
-        <div className="window-body grid grid-cols-4 gap-3 text-center">
+        {stockists.length === 0 ? (
+          <div className="window-body stat-sub">
+            NO STOCKIST, CONSIGNMENT OR POP-UP RECORDS YET — SHOPIFY DOESN'T HOLD THEM. PARTNER SHELVES SHOW HERE ONCE THOSE RECORDS ARE SYNCED.
+          </div>
+        ) : (
+        <div className="window-body grid grid-cols-2 gap-3 text-center md:grid-cols-4">
           <div>
             <div className="font-display text-sm dim">UNITS ON SHELVES</div>
             <div className="font-display text-3xl text-[var(--vhs-white)]">{outThere}</div>
           </div>
           <div>
             <div className="font-display text-sm dim">RETAIL VALUE OUT</div>
-            <div className="font-display text-3xl water">${outValue.toLocaleString()}</div>
+            <div className="font-display text-3xl water">{money(outValue)}</div>
           </div>
           <div>
             <div className="font-display text-sm dim">UNITS SOLD VIA PARTNERS</div>
@@ -53,10 +59,11 @@ export default function LocationsDesk() {
           <div>
             <div className="font-display text-sm dim">PARTNER SELL-THROUGH</div>
             <div className="font-display text-3xl palm">
-              {Math.round((soldThere / (soldThere + outThere || 1)) * 100)}%
+              {pct((soldThere / (soldThere + outThere || 1)) * 100)}
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* shelf corrections that disagree with the latest sync */}
@@ -85,12 +92,12 @@ export default function LocationsDesk() {
       </div>
 
       {/* per-location windows */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
         {stats.map(({ c, st }) => (
           <div key={c.name} className="window">
-            <div className="window-head">
+            <div className="window-head flex-wrap">
               <span className="wh-title">{c.name} · {c.location}</span>
-              <span className="flex items-center gap-2">
+              <span className="flex flex-wrap items-center gap-2">
                 {c.type !== 'ONLINE' && (
                   <span className="dim text-xs">
                     COUNTS FROM SYNC{activeEdits > 0 ? ` · ✎ = YOUR CORRECTION` : ' · CLICK A COUNT TO CORRECT'}
@@ -101,28 +108,31 @@ export default function LocationsDesk() {
               </span>
             </div>
             <div className="window-body space-y-2">
-              <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                 <div>
-                  <div className="font-display text-xs dim">REVENUE</div>
-                  <div className="font-display text-xl phosphor">${c.revenue.toLocaleString()}</div>
+                  <div className="stat-label">SALES · {c.revenueDays ? `${c.revenueDays} DAYS` : 'PERIOD UNKNOWN'}</div>
+                  <div className="font-display text-xl phosphor">{money(c.revenue)}</div>
+                  {c.type === 'ONLINE' && <div className="stat-sub">ONLINE STORE CHANNEL ONLY</div>}
                 </div>
                 <div>
                   <div className="font-display text-xs dim">ON HAND</div>
                   <div className="font-display text-xl text-[var(--vhs-white)]">{st.onHand}</div>
                 </div>
                 <div>
-                  <div className="font-display text-xs dim">SOLD</div>
+                  <div className="stat-label">{c.type === 'ONLINE' ? 'SOLD · 12 MO' : 'SOLD'}</div>
                   <div className="font-display text-xl warm">{st.soldUnits}</div>
+                  {c.type === 'ONLINE' && <div className="stat-sub">ALL CHANNELS</div>}
                 </div>
                 <div>
-                  <div className="font-display text-xs dim">SELL-THRU</div>
+                  <div className="stat-label">{c.type === 'ONLINE' ? 'SELL-THRU · 12 MO' : 'SELL-THRU'}</div>
                   <div className={`font-display text-xl ${st.sellThrough > 0.7 ? 'palm' : st.sellThrough < 0.35 ? 'tier-amber' : 'water'}`}>
-                    {Math.round(st.sellThrough * 100)}%
+                    {pct(st.sellThrough * 100)}
                   </div>
                 </div>
               </div>
 
-              <table className="w-full text-[0.74rem]">
+              <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-[0.8rem]">
                 <thead>
                   <tr className="border-b border-[var(--crt-mid)] text-left font-display text-xs dim">
                     <th className="py-1 font-normal">PRODUCT</th>
@@ -140,7 +150,9 @@ export default function LocationsDesk() {
                     const signal =
                       limited && r.onHand === 0 ? { label: 'SOLD OUT ✓', tone: 'palm' }
                       : r.sellThrough >= 0.85 && r.allocated >= 10 && !limited ? { label: 'RESTOCK', tone: 'tier-green' }
-                      : r.onHand >= 15 && r.sellThrough < 0.3 ? { label: 'DEAD STOCK', tone: 'tier-amber' }
+                      : r.onHand >= 15 && r.sellThrough < 0.3 ? { label: 'SLOW', tone: 'tier-amber' }
+                      : r.onHand === 0 && r.sold === 0 ? { label: 'INACTIVE', tone: 'dim' }
+                      : r.onHand === 0 ? { label: 'SOLD OUT', tone: 'tier-amber' }
                       : { label: 'OK', tone: 'dim' };
                     return (
                       <tr key={r.product.id} className="border-b border-[var(--crt-mid)] last:border-0">
@@ -184,6 +196,7 @@ export default function LocationsDesk() {
                   })}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         ))}

@@ -1,69 +1,104 @@
 import type { ReactNode } from 'react';
-import { useTerminal } from '@/terminal/TerminalContext';
-import type { DeskKey } from '@/terminal/TerminalContext';
-import { channelStats, monthlyBurn, oneOffCosts, runwayMonths, buildMoves, trailing30dRevenue, daysUntil, burnSource } from '@/game/engine';
+import { useTerminal } from '@/terminal/useTerminal';
+import type { DeskKey } from '@/terminal/desks';
+import {
+  channelStats, monthlyBurn, runwayMonths, buildMoves, trailing30dRevenue, daysUntil, burnSource,
+  netCash, cardOwed, monthToDateSales,
+} from '@/game/engine';
+import { money, pct, plural } from '@/game/format';
 import { InlineNumber } from '@/components/InlineEdit';
 import { AccountLines } from '@/components/BankAccounts';
 
-function Window({ title, right, children, className = '', onClick }: {
-  title: string; right?: ReactNode; children: ReactNode; className?: string; onClick?: () => void;
+const DESK_NAMES: Partial<Record<DeskKey, string>> = {
+  o: 'orders', a: 'ads', i: 'inventory', p: 'pipeline', l: 'shops', c: 'costs', n: 'alerts', g: 'goals', f: 'import feed',
+};
+
+/** Keycap that jumps to a desk — a real button with a spoken name. */
+function Jump({ to }: { to: DeskKey }) {
+  const { setDesk } = useTerminal();
+  return (
+    <button onClick={() => setDesk(to)} className="keycap tap" aria-label={`Open ${DESK_NAMES[to] ?? 'desk'} (${to.toUpperCase()})`} title={`OPEN ${(DESK_NAMES[to] ?? '').toUpperCase()}`}>
+      {to.toUpperCase()}
+    </button>
+  );
+}
+
+function Window({ title, right, children, className = '' }: {
+  title: string; right?: ReactNode; children: ReactNode; className?: string;
 }) {
   return (
-    <div className={`window ${onClick ? 'cursor-pointer hover:brightness-125 transition' : ''} ${className}`} onClick={onClick}>
+    <section className={`window ${className}`} aria-label={title}>
       <div className="window-head">
-        <span className="wh-title">{title}</span>
-        {right && <span className="dim text-sm">{right}</span>}
+        <h2 className="wh-title">{title}</h2>
+        {right && <span className="wh-note">{right}</span>}
       </div>
       <div className="window-body">{children}</div>
-    </div>
+    </section>
   );
 }
 
-function BigStat({ label, value, sub, tone = 'text-[var(--vhs-white)]' }: {
-  label: string; value: string; sub?: ReactNode; tone?: string;
+function BigStat({ label, value, sub, tone = 'text-[var(--vhs-white)]', size = 'text-4xl' }: {
+  label: string; value: ReactNode; sub?: ReactNode; tone?: string; size?: string;
 }) {
   return (
-    <div>
-      <div className="font-display text-sm dim tracking-wider">{label}</div>
-      <div className={`font-display text-4xl leading-tight ${tone}`}>{value}</div>
-      {sub && <div className="text-[0.72rem] dim mt-0.5">{sub}</div>}
+    <div className="min-w-0">
+      <div className="stat-label">{label}</div>
+      <div className={`font-display ${size} leading-tight ${tone} break-words`}>{value}</div>
+      {sub && <div className="stat-sub">{sub}</div>}
     </div>
   );
 }
 
-function Bar({ pct, color }: { pct: number; color: string }) {
+function Bar({ pct: p, color }: { pct: number; color: string }) {
   return (
     <div className="h-1.5 bg-[var(--crt-mid)]">
-      <div className="h-full" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
+      <div className="h-full" style={{ width: `${Math.max(0, Math.min(100, p))}%`, background: color }} />
     </div>
   );
 }
 
+const RANGE_LABEL: Record<number, string> = { 1: 'TODAY', 7: 'LAST 7 DAYS', 30: 'LAST 30 DAYS' };
+
 export default function StatusDesk() {
-  const { data, metrics, notices, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors } = useTerminal();
+  const { data, metrics, notices, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors, range } = useTerminal();
   if (!data || !metrics) return null;
 
-  const redNotices = notices.filter((n) => n.tier !== 'green').slice(0, 3);
-  const channelTotal = data.channels.reduce((s, c) => s + c.revenue, 0);
-  const readyBuilds = data.pipeline.filter((p) => p.status === 'READY').length;
+  const redNotices = notices.filter((n) => n.tier === 'red');
+  const synced = !!data.accounts?.length;
+  const cash = netCash(data);
+  const owed = cardOwed(data);
   const burn = monthlyBurn(data);
-  const oneOffs = oneOffCosts(data);
   const runway = runwayMonths(data);
   const moves = buildMoves(data, metrics, trailing30dRevenue(data));
+  const readyBuilds = data.pipeline.filter((p) => p.status === 'READY').length;
   const dropDays = data.nextDrop ? daysUntil(data.nextDrop.date) : null;
   const dropRetail = data.pipeline
     .filter((p) => p.status === 'READY')
     .reduce((s, p) => s + Math.round(p.qty * p.retail * p.expectedSellThrough), 0);
 
+  // month-to-date sales vs the monthly goal
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const mtd = monthToDateSales(data, now);
+  const goal = data.monthlySalesGoal ?? 0;
+  const pace = mtd !== null ? (mtd / now.getDate()) * daysInMonth : null;
+  const monthName = now.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+
+  // last complete month of Meta billing seen on the bank/card (not attributed ad spend)
+  const lastFull = [...(data.cashflow ?? [])].reverse().find((m) => !m.partial);
+  const metaBilling = lastFull?.spend.ADS;
+  const channelTotal = data.channels.reduce((s, c) => s + c.revenue, 0);
+  const notes = data.meta?.notes ?? [];
+
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
       {/* a stored snapshot that failed validation is never rendered — say so */}
       {storedSnapshotErrors && (
-        <div className="window">
+        <div className="window" role="alert">
           <div className="window-head">
             <span className="wh-title tier-red">STORED SYNC COULD NOT BE LOADED — SHOWING SAMPLE DATA</span>
           </div>
-          <div className="window-body text-[0.74rem] dim space-y-0.5">
+          <div className="window-body text-[0.8rem] dim space-y-0.5">
             {storedSnapshotErrors.map((e, i) => <div key={i}>▲ {e}</div>)}
             <div className="warm">IT IS STILL IN THIS BROWSER: OPEN IMPORT → EXPORT BACKUP TO RECOVER IT, OR IMPORT A FRESH SYNC.</div>
           </div>
@@ -78,305 +113,300 @@ export default function StatusDesk() {
         </div>
       )}
 
-      {/* sync briefing */}
-      {imported && (
-        <div className="window">
-          <div className="window-head">
-            <span className="wh-title">SINCE LAST SYNC</span>
-            <span className="dim text-sm">
-              IMPORTED {importedAt ? new Date(importedAt).toLocaleString() : 'UNKNOWN'}
-              {' · '}COVERS {data.meta?.coverageStart ? `${new Date(data.meta.coverageStart).toLocaleDateString()} → ` : ''}
-              {data.meta?.coverageEnd ? new Date(data.meta.coverageEnd).toLocaleString() : 'UNKNOWN PERIOD'}
-            </span>
-          </div>
-          <div className="window-body">
-            {delta ? (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-display text-sm">
-                <span className="phosphor">+${Math.round(delta.revenue).toLocaleString()} REVENUE</span>
-                <span className="water">+{delta.orders} ORDERS</span>
-                {delta.spend !== null && <span className="tier-red">-${Math.round(delta.spend).toLocaleString()} AD SPEND</span>}
-                {delta.events.map((e, i) => (
-                  <span key={i} className="badge tier-amber">{e}</span>
-                ))}
-              </div>
-            ) : (
-              <div className="font-display text-sm dim">FIRST SYNC — BASELINE SET. DELTAS APPEAR ON THE NEXT IMPORT.</div>
-            )}
-            {/* the notes themselves live in the import feed, not on the overview */}
-            {data.meta?.notes && data.meta.notes.length > 0 && (
-              <button
-                onClick={() => setDesk('f')}
-                className="mt-2 flex w-full items-center gap-2 border-t border-[var(--crt-mid)] pt-2 text-left text-[0.74rem] dim hover:text-[var(--vhs-white)]"
-              >
-                <span>
-                  {data.meta.notes.length} DATA NOTE{data.meta.notes.length === 1 ? '' : 'S'} FROM THIS SYNC — IN THE IMPORT FEED
-                </span>
-                <span className="keycap ml-auto">F</span>
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* drop countdown */}
-      {data.nextDrop && dropDays !== null && dropDays >= 0 && (
-        <div
-          className="window cursor-pointer hover:brightness-125 transition"
-          onClick={() => setDesk('g')}
-        >
-          <div className="window-body flex items-center gap-5">
-            <span className={`font-display text-4xl leading-none ${dropDays <= 3 ? 'tier-red crt-flicker' : dropDays <= 10 ? 'tier-amber' : 'tropic-pink'}`}>
-              {dropDays === 0 ? 'DROP DAY' : `D-${dropDays}`}
-            </span>
-            <span className="font-display text-xl warm">{data.nextDrop.name}</span>
-            <span className="dim text-[0.74rem]">
-              {readyBuilds > 0 ? `${readyBuilds} RUN${readyBuilds > 1 ? 'S' : ''} READY · $${dropRetail.toLocaleString()} EXPECTED` : 'NO RUNS READY — CHECK THE PIPELINE'}
-            </span>
-            <span className="keycap ml-auto">G</span>
-          </div>
-        </div>
-      )}
-
-      {/* headline strip */}
-      <div className="grid grid-cols-3 gap-2">
-        {data.accounts && data.accounts.length > 0 ? (
-          <Window title="BANK BALANCE" right="CHECKING + SAVINGS · SYNCED">
-            <div className={`font-display text-6xl leading-none ${data.bankBalance < 0 ? 'tier-red' : 'phosphor'}`}>
-              {data.bankBalance < 0 ? '−' : ''}${Math.abs(data.bankBalance).toLocaleString()}
-            </div>
-            <div className="mt-2"><AccountLines accounts={data.accounts} /></div>
-          </Window>
-        ) : (
-          <Window title="BANK BALANCE" right="BANK ACCOUNT · CLICK TO SET">
-            <div className="flex items-end justify-between">
-              <div>
+      {/* where you stand: cash, sales vs goal, burn, what needs doing */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <Window title="CASH ON HAND" right={synced ? 'BANK − CARD OWED' : 'MANUAL ENTRY'}>
+          {synced ? (
+            <>
+              <BigStat
+                label="NET OF CARD"
+                value={money(cash, { cents: true })}
+                tone={cash !== null && cash < 0 ? 'tier-red' : 'phosphor'}
+                size="text-5xl"
+                sub={owed ? `BANK ${money(data.bankBalance, { cents: true })} · CARD OWES ${money(owed, { cents: true })}` : `BANK ${money(data.bankBalance, { cents: true })}`}
+              />
+              <details className="mt-2">
+                <summary className="stat-sub cursor-pointer">ACCOUNTS</summary>
+                <div className="mt-1"><AccountLines accounts={data.accounts!} /></div>
+              </details>
+            </>
+          ) : (
+            <BigStat
+              label="BANK BALANCE"
+              size="text-5xl"
+              value={
                 <InlineNumber
-                  className="font-display text-6xl phosphor crt-flicker leading-none"
+                  className="font-display phosphor"
                   value={data.bankBalance}
-                  format={(v) => `$${v.toLocaleString()}`}
+                  format={(v) => (v === null ? 'SET' : money(v))}
                   title="SET BANK BALANCE"
                   onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
                 />
-              </div>
-              <div className="text-right text-[0.72rem] dim">
-                <div>MANUAL ENTRY</div>
-                <div>SALES ≠ CASH RECEIVED</div>
-              </div>
-            </div>
-          </Window>
-        )}
-
-        <Window title="SHOPIFY SALES" right={<button onClick={(e) => { e.stopPropagation(); setDesk('o'); }} className="keycap">O</button>}>
-          <div className="flex items-end justify-between">
-            <BigStat
-              label="NET REVENUE"
-              value={`$${metrics.revenue.toLocaleString()}`}
-              tone="text-[var(--vhs-white)]"
+              }
+              sub={data.bankBalance === null ? 'UNKNOWN — CLICK TO ENTER, OR SYNC THE BANK' : 'TYPED IN · SALES ≠ CASH RECEIVED'}
             />
-            <div className="text-right">
-              {metrics.revenueDeltaPct !== null ? (
-                <div className={`font-display text-xl ${metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
-                  {metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(metrics.revenueDeltaPct).toFixed(1)}%
-                </div>
-              ) : (
-                <div className="font-display text-xl dim">—</div>
-              )}
-              <div className="text-[0.72rem] dim">VS PREV PERIOD</div>
-              <div className="text-[0.72rem] dim mt-1">{metrics.orders} ORDERS · AOV ${metrics.aov.toFixed(0)}</div>
-            </div>
-          </div>
+          )}
         </Window>
 
-        <Window title="ADS" right={<button onClick={(e) => { e.stopPropagation(); setDesk('a'); }} className="keycap">A</button>}>
-          <div className="flex items-end justify-between">
-            <BigStat
-              label="META SPEND"
-              value={metrics.spend !== null ? `$${metrics.spend.toLocaleString()}` : '—'}
-              tone={metrics.spend !== null ? 'tier-red' : 'dim'}
-              sub={metrics.spend === null ? 'META ADS NOT CONNECTED' : undefined}
-            />
-            <div className="text-right">
-              <div className={`font-display text-xl ${metrics.roas === null ? 'dim' : metrics.roas >= data.targetRoas ? 'phosphor' : 'tier-amber'}`}>
-                {metrics.roas !== null ? metrics.roas.toFixed(2) : '—'} ROAS
-              </div>
-              <div className="text-[0.72rem] dim">MER {metrics.mer !== null ? metrics.mer.toFixed(2) : '—'} · BE {metrics.breakEvenRoas.toFixed(2)}</div>
-            </div>
+        <Window title={`SALES IN ${monthName}`} right={<Jump to="o" />}>
+          <BigStat
+            label="SHOPIFY NET SALES, MONTH TO DATE"
+            value={money(mtd)}
+            size="text-5xl"
+            sub={mtd === null ? 'NO DATED DAILY SALES IN THIS SYNC' : `ON PACE FOR ${money(pace)} · DAY ${now.getDate()} OF ${daysInMonth}`}
+          />
+          <div className="mt-2 flex items-center justify-between gap-2 stat-sub">
+            <span>
+              GOAL{' '}
+              <InlineNumber
+                className="warm"
+                value={goal > 0 ? goal : null}
+                format={(v) => (v === null ? 'SET A MONTHLY GOAL' : `${money(v)}/MO`)}
+                title="SET MONTHLY SALES GOAL"
+                onCommit={(v) => updateData((d) => ({ ...d, monthlySalesGoal: Math.max(0, v) }))}
+              />
+            </span>
+            {goal > 0 && mtd !== null && <span className={mtd >= goal ? 'tier-green' : 'warm'}>{pct((mtd / goal) * 100)}</span>}
           </div>
+          {goal > 0 && mtd !== null && (
+            <div className="mt-1 relative">
+              <Bar pct={(mtd / goal) * 100} color={mtd >= goal ? 'var(--palm)' : 'var(--sun)'} />
+              {/* where today should be if sales were spread evenly */}
+              <div className="absolute top-[-2px] h-[10px] w-px bg-[var(--vhs-white)]" style={{ left: `${(now.getDate() / daysInMonth) * 100}%` }} aria-hidden />
+            </div>
+          )}
         </Window>
-      </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {/* inventory */}
-        <Window title="INVENTORY" right={<button onClick={(e) => { e.stopPropagation(); setDesk('i'); }} className="keycap">I</button>}>
+        <Window title="BURN & RUNWAY" right={<Jump to="c" />}>
           <div className="grid grid-cols-2 gap-3">
-            <BigStat label="UNITS IN STOCK" value={metrics.inventoryUnits.toLocaleString()} />
-            <BigStat label="SELL-THROUGH" value={`${Math.round(metrics.overallSellThrough * 100)}%`} tone="palm" />
             <BigStat
-              label="VALUE @ COST"
-              value={`$${Math.round(metrics.inventoryCost).toLocaleString()}`}
-              tone="dim"
-              sub={metrics.inventoryUnitsWithoutCost > 0 ? `EXCL. ${metrics.inventoryUnitsWithoutCost} UNITS WITHOUT COST` : undefined}
+              label="MONTHLY BURN"
+              value={burn > 0 ? money(burn) : '—'}
+              tone={burn > 0 ? 'tier-red' : 'dim'}
+              sub={burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : burnSource(data) === 'COST_LINES' ? 'YOUR COST LINES' : 'NO COSTS OR SPENDING DATA'}
             />
-            <BigStat label="VALUE @ RETAIL" value={`$${metrics.inventoryRetail.toLocaleString()}`} tone="water" />
-          </div>
-          <div className="mt-2">
-            <Bar pct={metrics.overallSellThrough * 100} color="var(--palm)" />
-          </div>
-        </Window>
-
-        {/* guests */}
-        <Window title="TRAFFIC">
-          <div className="grid grid-cols-2 gap-3">
-            <BigStat label="SESSIONS" value={metrics.guests !== null ? metrics.guests.toLocaleString() : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
-            <BigStat label="CONVERSION" value={metrics.conversionRate !== null ? `${metrics.conversionRate.toFixed(1)}%` : '—'} tone="tropic-pink" sub={metrics.conversionRate === null ? 'NEEDS SESSIONS' : undefined} />
-            <BigStat label="REGULARS" value={data.repeatRate !== undefined ? `${Math.round(data.repeatRate * 100)}%` : '—'} tone="palm" sub={data.repeatRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
-            <BigStat label="REFUND RATE" value={data.refundRate !== undefined ? `${(data.refundRate * 100).toFixed(1)}%` : '—'} tone={data.refundRate !== undefined && data.refundRate > 0.05 ? 'tier-red' : 'dim'} sub={data.refundRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
+            <BigStat
+              label="RUNWAY"
+              value={runway === null ? '—' : cash !== null && cash < 0 ? 'SHORT' : runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
+              tone={runway === null ? 'dim' : runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}
+              sub={runway === null ? 'CASH UNKNOWN' : cash !== null && cash < 0 ? `${money(cash)} NET OF CARD` : 'NET CASH ÷ BURN'}
+            />
           </div>
         </Window>
 
-        {/* top moves */}
-        <Window title="TOP MOVES" right={`SCORE ${metrics.rating} · ${metrics.ratingBand}`}>
-          {moves.length === 0 ? (
-            <div className="font-display text-sm dim">NOTHING URGENT RIGHT NOW.</div>
+        <Window title="NEEDS ATTENTION" right={<Jump to="n" />}>
+          {redNotices.length === 0 ? (
+            <div className="font-display text-sm tier-green">NOTHING RED RIGHT NOW.</div>
           ) : (
-            <div className="space-y-1.5">
-              {moves.map((mv, i) => (
-                <button
-                  key={mv.id}
-                  onClick={() => setDesk(mv.desk as DeskKey)}
-                  className="tape-row w-full text-left hover:brightness-125 transition"
-                >
-                  <span className={`tier-${mv.tier} shrink-0 font-display`}>{i + 1}.</span>
-                  <span className="flex-1 min-w-0">
-                    <span className="warm block truncate">{mv.text}</span>
-                    <span className="dim text-[0.68rem] block truncate">{mv.detail}</span>
-                  </span>
-                  <span className={`font-display text-sm shrink-0 ${mv.tier === 'red' ? 'tier-red' : mv.tier === 'amber' ? 'tier-amber' : 'palm'}`}>
-                    ${Math.round(mv.impact).toLocaleString()}
-                  </span>
-                </button>
+            <ul className="space-y-1">
+              {redNotices.slice(0, 4).map((n) => (
+                <li key={n.id}>
+                  <button onClick={() => setDesk(n.desk as DeskKey)} className="w-full text-left">
+                    <span className="tier-red">▲ </span>
+                    <span className="warm text-[0.82rem]">{n.text}</span>
+                  </button>
+                </li>
               ))}
-            </div>
+              {redNotices.length > 4 && <li className="stat-sub">+{redNotices.length - 4} MORE IN ALERTS</li>}
+            </ul>
           )}
         </Window>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {/* pipeline */}
-        <Window
-          title="PRODUCTION PIPELINE"
-          right={<button onClick={(e) => { e.stopPropagation(); setDesk('p'); }} className="keycap">P</button>}
-          onClick={() => setDesk('p')}
-        >
-          <div className="flex items-end justify-between">
-            <BigStat label="RUNS IN PROGRESS" value={String(data.pipeline.length)} tone="water" />
-            {readyBuilds > 0 && <span className="badge tier-green">{readyBuilds} READY TO LAUNCH</span>}
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-            <div>
-              <div className="font-display text-lg dim">COST</div>
-              <div className="font-display text-xl tier-red">${metrics.pipelineCost.toLocaleString()}</div>
-            </div>
-            <div>
-              <div className="font-display text-lg dim">GROSS POTENTIAL</div>
-              <div className="font-display text-xl warm">${metrics.pipelineGross.toLocaleString()}</div>
-            </div>
-            <div>
-              <div className="font-display text-lg dim">NET POTENTIAL</div>
-              <div className="font-display text-xl phosphor">+${metrics.pipelineNet.toLocaleString()}</div>
-            </div>
-          </div>
-        </Window>
-
-        {/* locations */}
-        <Window title="STORE LOCATIONS" right={<button onClick={(e) => { e.stopPropagation(); setDesk('l'); }} className="keycap">L</button>} onClick={() => setDesk('l')}>
+      {/* top moves */}
+      <Window title="TOP MOVES" right="RANKED BY MONEY AT STAKE">
+        {moves.length === 0 ? (
+          <div className="font-display text-sm dim">NOTHING URGENT RIGHT NOW.</div>
+        ) : (
           <div className="space-y-1.5">
-            {data.channels.map((c) => {
-              const st = channelStats(c, data.products);
-              return (
-                <div key={c.name}>
-                  <div className="flex justify-between text-[0.74rem]">
-                    <span className="warm">{c.name} <span className="dim">· {c.location}</span></span>
-                    <span className="font-display text-base">
-                      <span className="phosphor">${c.revenue.toLocaleString()}</span>
-                      <span className="dim"> · </span>
-                      <span className="water">{st.onHand}u</span>
-                      <span className="dim"> · </span>
-                      <span className={st.sellThrough > 0.7 ? 'palm' : 'dim'}>{Math.round(st.sellThrough * 100)}%</span>
-                    </span>
-                  </div>
-                  <Bar pct={(c.revenue / channelTotal) * 100} color="var(--water)" />
-                </div>
-              );
-            })}
-          </div>
-        </Window>
-
-        {/* scenarios */}
-        <Window title="GOALS">
-          <div className="space-y-2">
-            {data.quests.map((q) => {
-              const pct = Math.min(100, (q.current / q.target) * 100);
-              const done = q.current >= q.target;
-              return (
-                <div key={q.id}>
-                  <div className="flex justify-between font-display text-sm">
-                    <span className={done ? 'tier-green' : 'warm'}>{q.goal}</span>
-                    <span className="dim">{done ? '✓ DONE' : `${Math.round(pct)}% · ${q.daysLeft}D`}</span>
-                  </div>
-                  <Bar pct={pct} color={done ? 'var(--palm)' : 'var(--sun)'} />
-                </div>
-              );
-            })}
-          </div>
-        </Window>
-      </div>
-
-      {/* finances strip */}
-      <Window
-        title="FINANCES · BURN &amp; RUNWAY"
-        right={<button onClick={(e) => { e.stopPropagation(); setDesk('c'); }} className="keycap">C</button>}
-        onClick={() => setDesk('c')}
-      >
-        <div className="grid grid-cols-4 gap-3 text-center">
-          <div>
-            <div className="font-display text-sm dim">MONTHLY BURN</div>
-            <div className="font-display text-2xl tier-red">${Math.round(burn).toLocaleString()}</div>
-            <div className="text-[0.68rem] dim">{burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : 'SUBS + PAYROLL + OPS'}</div>
-          </div>
-          <div>
-            <div className="font-display text-sm dim">ONE-OFF PRODUCTION</div>
-            <div className="font-display text-2xl sun">${oneOffs.toLocaleString()}</div>
-            <div className="text-[0.68rem] dim">CURRENT RUNS</div>
-          </div>
-          <div>
-            <div className="font-display text-sm dim">RUNWAY</div>
-            <div className={`font-display text-2xl ${runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}`}>
-              {runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
-            </div>
-            <div className="text-[0.68rem] dim">BANK ÷ BURN</div>
-          </div>
-          <div>
-            <div className="font-display text-sm dim">COST LINES</div>
-            <div className="font-display text-2xl warm">{data.costs.filter((c) => c.active).length}</div>
-            <div className="text-[0.68rem] dim">{data.costs.filter((c) => !c.active).length} PAUSED</div>
-          </div>
-        </div>
-      </Window>
-
-      {/* alerts strip */}
-      {redNotices.length > 0 && (
-        <Window title="NEEDS ATTENTION" right={<button onClick={(e) => { e.stopPropagation(); setDesk('n'); }} className="keycap">N</button>}>
-          <div>
-            {redNotices.map((n) => (
-              <div key={n.id} className="tape-row">
-                <span className={`tier-${n.tier} shrink-0`}>{n.tier === 'red' ? '▲' : '◆'}</span>
-                <span className="warm flex-1 truncate">{n.text}</span>
-                <span className="dim text-[0.7rem] truncate">{n.detail}</span>
-              </div>
+            {moves.map((mv, i) => (
+              <button
+                key={mv.id}
+                onClick={() => setDesk(mv.desk as DeskKey)}
+                className="tape-row w-full text-left"
+              >
+                <span className={`tier-${mv.tier} shrink-0 font-display`}>{i + 1}.</span>
+                <span className="flex-1 min-w-0">
+                  <span className="warm block">{mv.text}</span>
+                  <span className="stat-sub block">{mv.detail}</span>
+                </span>
+                <span className={`font-display text-sm shrink-0 ${mv.tier === 'red' ? 'tier-red' : mv.tier === 'amber' ? 'tier-amber' : 'palm'}`}>
+                  {money(mv.impact)}
+                </span>
+              </button>
             ))}
           </div>
+        )}
+      </Window>
+
+      {/* drop countdown */}
+      {data.nextDrop && dropDays !== null && dropDays >= 0 && (
+        <button className="window w-full text-left" onClick={() => setDesk('g')}>
+          <div className="window-body flex flex-wrap items-center gap-x-5 gap-y-1">
+            <span className={`font-display text-4xl leading-none ${dropDays <= 3 ? 'tier-red' : dropDays <= 10 ? 'tier-amber' : 'tropic-pink'}`}>
+              {dropDays === 0 ? 'DROP DAY' : `D-${dropDays}`}
+            </span>
+            <span className="font-display text-xl warm">{data.nextDrop.name}</span>
+            <span className="stat-sub">
+              {readyBuilds > 0 ? `${plural(readyBuilds, 'RUN')} READY · ${money(dropRetail)} EXPECTED` : 'NO RUNS READY — CHECK THE PIPELINE'}
+            </span>
+          </div>
+        </button>
+      )}
+
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <Window title="SHOPIFY SALES" right={<span className="flex items-center gap-2">{RANGE_LABEL[range] ?? `${range}D`} <Jump to="o" /></span>}>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <BigStat label="NET REVENUE" value={money(metrics.revenue)} />
+            <div className="text-right">
+              <div className={`font-display text-xl ${metrics.revenueDeltaPct === null ? 'dim' : metrics.revenueDeltaPct >= 0 ? 'tier-green' : 'tier-red'}`}>
+                {metrics.revenueDeltaPct === null ? '—' : `${metrics.revenueDeltaPct >= 0 ? '▲' : '▼'} ${pct(Math.abs(metrics.revenueDeltaPct))}`}
+              </div>
+              <div className="stat-sub">{metrics.revenueDeltaPct === null ? 'TOO FEW ORDERS TO COMPARE' : `VS PREVIOUS ${range === 1 ? 'DAY' : `${range} DAYS`}`}</div>
+              <div className="stat-sub mt-1">{plural(metrics.orders, 'ORDER')} · AOV {metrics.orders ? money(metrics.aov) : '—'}</div>
+            </div>
+          </div>
         </Window>
+
+        <Window title="INVENTORY" right={<Jump to="i" />}>
+          <div className="grid grid-cols-2 gap-3">
+            <BigStat label="UNITS IN STOCK" value={metrics.inventoryUnits.toLocaleString('en-US')} size="text-3xl" />
+            <BigStat label="SOLD, 12 MONTHS" value={pct(metrics.overallSellThrough * 100)} tone="palm" size="text-3xl" sub="OF STOCK + UNITS SOLD" />
+            <BigStat
+              label="VALUE AT COST"
+              value={money(metrics.inventoryCost)}
+              tone="dim"
+              size="text-3xl"
+              sub={metrics.inventoryUnitsWithoutCost > 0 ? `EXCL. ${plural(metrics.inventoryUnitsWithoutCost, 'UNIT')} WITHOUT COST` : undefined}
+            />
+            <BigStat label="VALUE AT RETAIL" value={money(metrics.inventoryRetail)} tone="water" size="text-3xl" />
+          </div>
+        </Window>
+
+        <Window title="TRAFFIC" right={RANGE_LABEL[range] ?? `${range}D`}>
+          <div className="grid grid-cols-2 gap-3">
+            <BigStat label="SESSIONS" size="text-3xl" value={metrics.guests !== null ? metrics.guests.toLocaleString('en-US') : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
+            <BigStat label="CONVERSION" size="text-3xl" value={metrics.conversionRate !== null ? pct(metrics.conversionRate, 1) : '—'} tone="tropic-pink" sub={metrics.conversionRate === null ? 'NEEDS SESSIONS' : undefined} />
+            <BigStat label="RETURNING CUSTOMERS" size="text-3xl" value={data.repeatRate !== undefined ? pct(data.repeatRate * 100) : '—'} tone="palm" sub={data.repeatRate === undefined ? 'NOT IN DATA' : 'AS REPORTED, 90 DAYS'} />
+            <BigStat label="REFUND RATE" size="text-3xl" value={data.refundRate !== undefined ? pct(data.refundRate * 100, 1) : '—'} tone={data.refundRate !== undefined && data.refundRate > 0.05 ? 'tier-red' : 'dim'} sub={data.refundRate === undefined ? 'NOT IN DATA' : 'AS REPORTED'} />
+          </div>
+        </Window>
+
+        <Window title="STORE LOCATIONS" right={<Jump to="l" />}>
+          <div className="space-y-2">
+            {data.channels.map((c) => {
+              const st = channelStats(c, data.products);
+              const period = c.revenueDays ? `${c.revenueDays}D` : 'PERIOD UNKNOWN';
+              return (
+                <div key={c.name}>
+                  <div className="flex flex-wrap justify-between gap-x-3 text-[0.8rem]">
+                    <span className="warm">{c.name} <span className="dim">· {c.location}</span></span>
+                    <span className="font-display">
+                      <span className="phosphor">{money(c.revenue)}</span> <span className="dim">SALES {period}</span>
+                    </span>
+                  </div>
+                  <div className="stat-sub">
+                    {st.onHand.toLocaleString('en-US')} IN STOCK · {c.type === 'ONLINE' ? `${pct(st.sellThrough * 100)} SOLD OVER 12 MONTHS (ALL CHANNELS)` : `${pct(st.sellThrough * 100)} OF ALLOCATED SOLD`}
+                  </div>
+                  {data.channels.length > 1 && channelTotal > 0 && <Bar pct={(c.revenue / channelTotal) * 100} color="var(--water)" />}
+                </div>
+              );
+            })}
+            {data.channels.every((c) => c.type === 'ONLINE') && (
+              <div className="stat-sub">NO STOCKIST OR CONSIGNMENT RECORDS YET.</div>
+            )}
+          </div>
+        </Window>
+
+        <Window title="ADS" right={<Jump to="a" />}>
+          {metrics.spend === null && data.campaigns.length === 0 ? (
+            <div className="space-y-1">
+              <div className="font-display text-sm dim">META ADS NOT CONNECTED — NO SPEND OR ROAS SHOWN.</div>
+              {metaBilling !== undefined && lastFull && (
+                <div className="stat-sub">
+                  BANK/CARD SHOWS {money(metaBilling)} OF META BILLING IN {new Date(`${lastFull.month}-15`).toLocaleString('en-US', { month: 'short' }).toUpperCase()}.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-end justify-between gap-2">
+              <BigStat label="AD SPEND" value={money(metrics.spend)} tone={metrics.spend !== null ? 'tier-red' : 'dim'} />
+              <div className="text-right">
+                <div className={`font-display text-xl ${metrics.roas === null ? 'dim' : metrics.roas >= data.targetRoas ? 'phosphor' : 'tier-amber'}`}>
+                  {metrics.roas !== null ? metrics.roas.toFixed(2) : '—'} ROAS
+                </div>
+                <div className="stat-sub">MER {metrics.mer !== null ? metrics.mer.toFixed(2) : '—'} · BREAK-EVEN {metrics.breakEvenRoas.toFixed(2)}</div>
+              </div>
+            </div>
+          )}
+        </Window>
+
+        <Window title="PRODUCTION" right={<Jump to="p" />}>
+          {data.pipeline.length === 0 ? (
+            <div className="font-display text-sm dim">NO PRODUCTION RUNS RECORDED.</div>
+          ) : (
+            <>
+              <div className="flex items-end justify-between">
+                <BigStat label="RUNS IN PROGRESS" value={String(data.pipeline.length)} tone="water" size="text-3xl" />
+                {readyBuilds > 0 && <span className="badge tier-green">{readyBuilds} READY TO LAUNCH</span>}
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                <BigStat label="COST" value={money(metrics.pipelineCost)} tone="tier-red" size="text-xl" />
+                <BigStat label="GROSS" value={money(metrics.pipelineGross)} tone="warm" size="text-xl" />
+                <BigStat label="NET" value={money(metrics.pipelineNet, { signed: true })} tone="phosphor" size="text-xl" />
+              </div>
+            </>
+          )}
+        </Window>
+
+        {data.quests.length > 0 && (
+          <Window title="GOALS" right={<Jump to="g" />}>
+            <div className="space-y-2">
+              {data.quests.map((q) => {
+                const p = Math.min(100, (q.current / q.target) * 100);
+                const done = q.current >= q.target;
+                return (
+                  <div key={q.id}>
+                    <div className="flex justify-between gap-2 font-display text-sm">
+                      <span className={done ? 'tier-green' : 'warm'}>{q.goal}</span>
+                      <span className="dim shrink-0">{done ? '✓ DONE' : `${Math.round(p)}% · ${q.daysLeft}D`}</span>
+                    </div>
+                    <Bar pct={p} color={done ? 'var(--palm)' : 'var(--sun)'} />
+                  </div>
+                );
+              })}
+            </div>
+          </Window>
+        )}
+      </div>
+
+      {/* sync briefing — one line; details live in the import feed */}
+      {imported && (
+        <button className="window w-full text-left" onClick={() => setDesk('f')}>
+          <div className="window-body flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8rem]">
+            <span className="wh-title">LAST SYNC</span>
+            <span className="dim">
+              IMPORTED {importedAt ? new Date(importedAt).toLocaleString() : 'UNKNOWN'}
+              {' · '}COVERS {data.meta?.coverageStart ? `${new Date(data.meta.coverageStart).toLocaleDateString()} → ` : ''}
+              {data.meta?.coverageEnd ? new Date(data.meta.coverageEnd).toLocaleString() : 'UNKNOWN PERIOD'}
+            </span>
+            {delta ? (
+              <span className="font-display">
+                <span className="phosphor">{money(delta.revenue, { signed: true })} REVENUE</span>
+                <span className="water"> · +{plural(delta.orders, 'ORDER')}</span>
+                {delta.spend !== null && <span className="tier-red"> · {money(-delta.spend)} AD SPEND</span>}
+                {delta.events.length > 0 && <span className="tier-amber"> · {plural(delta.events.length, 'CHANGE')}</span>}
+              </span>
+            ) : (
+              <span className="dim">FIRST SYNC — CHANGES SHOW FROM THE NEXT ONE</span>
+            )}
+            {notes.length > 0 && (
+              <span className="dim ml-auto">
+                {plural(notes.length, 'DATA NOTE')} FROM THIS SYNC — IN THE IMPORT FEED <span className="keycap">F</span>
+              </span>
+            )}
+          </div>
+        </button>
       )}
     </div>
   );

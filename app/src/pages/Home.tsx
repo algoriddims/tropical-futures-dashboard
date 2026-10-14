@@ -1,4 +1,5 @@
-import { TerminalProvider, useTerminal } from '@/terminal/TerminalContext';
+import { TerminalProvider } from '@/terminal/TerminalContext';
+import { useTerminal } from '@/terminal/useTerminal';
 import { TopBar, StatusBar, HelpOverlay } from '@/terminal/Chrome';
 import StatusDesk from '@/desks/StatusDesk';
 import PipelineDesk from '@/desks/PipelineDesk';

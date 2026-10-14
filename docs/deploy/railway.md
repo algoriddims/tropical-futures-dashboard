@@ -21,7 +21,7 @@ On Railway the server keeps **one shared snapshot** (the latest Shopify + bank s
 
 Still per browser: cost lines, planning inputs and shelf corrections you type in.
 
-**Import feed (F):** each upload's coverage, sources and data notes are listed on the IMPORTS desk, newest first, for every version the server still keeps (the current one plus 20). The overview only shows a one-line count that links there. The feed endpoint (`GET /api/snapshot/history`, same password) returns that metadata and record counts only, never the records.
+**Import feed (F):** each upload's coverage, sources and data notes are listed on the IMPORTS desk, newest first, for every version the server still keeps (the current one plus 20). The overview only shows a one-line count that links there. The feed endpoint (`GET /api/snapshot/history`, same password) returns that metadata and record counts only, never the records. Parsed summaries are cached per file until the file changes.
 
 The snapshot must live on a **Railway volume** — container files are wiped on every redeploy.
 
@@ -55,8 +55,12 @@ curl -u any:YOUR_PASSWORD -X PUT -H 'Content-Type: application/json' \
 
 ## Notes
 
-- The snapshot API is behind the same password; uploads from other websites are refused, bodies over 5 MB are rejected, and the app re-validates everything it loads.
-- Basic auth is a single shared gate, enough for a solo private tool. It is not per-user accounts and has no lockout after failed attempts. Use a long password.
+- The snapshot API is behind the same password; uploads from other websites (or with `Origin: null`) are refused, bodies over 5 MB are rejected, and the app re-validates everything it loads.
+- Uploads are written one at a time. Each one is written to a uniquely named temporary file, the current snapshot is copied to an archive (`snapshot-<ms>-<seq>.json`), and the new file then atomically replaces it. Simultaneous uploads all succeed in order, and readers never see an empty store. Archives named `snapshot-<ms>.json` by earlier deploys are still listed and pruned.
+- Basic auth is a single shared gate, enough for a solo private tool. It is not per-user accounts. Use a long password.
+- Failed sign-ins are logged as one line (`auth failed: <time> ip=<ip> path=<path>`, never the credentials). After 10 failures in 10 minutes, that IP gets 429 for the rest of the window, even with the right password. Restarting the service clears the counter. A request with no credentials (the browser's first visit before the prompt) doesn't count. The IP is the last `X-Forwarded-For` entry, the one the hosting proxy appends; earlier entries come from the client and are ignored. This is not verified against Railway's proxy from here. It slows casual guessing but is not a lockout, and a restart resets it. A long random password (20+ characters) is still the real protection.
+- Every response carries `Content-Security-Policy` (same-origin only, plus Google Fonts for the Terminal look's VT323 font), `Strict-Transport-Security`, `X-Frame-Options: DENY` and `nosniff`. Fingerprinted assets are cached `private, max-age=31536000, immutable`. HTML is `no-cache`.
+- Malformed request lines and bad `%` escapes in the path get 400 with no stack trace in the logs. When an archived snapshot can't be parsed, the import feed logs only its file name.
 - The browser remembers the credentials for the session. Log out by closing the browser or clearing site data.
 - Cost: Railway bills by usage. A small static server like this should be cheap, but check current Railway pricing — not verified here.
 
@@ -69,3 +73,5 @@ npm run build
 $env:DASHBOARD_PASSWORD = 'a-long-local-test-password'
 npm start   # http://localhost:3000
 ```
+
+Server regression checks (no dependencies; needs `dist/` from `npm run build`): `node --test app/server.test.mjs` from the repo root.

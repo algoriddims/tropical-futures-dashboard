@@ -60,6 +60,8 @@ query Orders { orders(first: 25, sortKey: CREATED_AT, reverse: true) { nodes { n
 - **Unit cost** = Shopify inventory-item cost; if any variant lacks one, the product's cost is unknown and it's left out of cost totals.
 - **Gross margin** = list-price estimate: (price − unit cost) weighted by 365-day units, over products with a known cost. Before discounts, fees and shipping.
 - **Repeat rate** = Shopify returning-customer rate, last 90 days.
+- **Online Store row** = sales and orders of the Online Store channel over the last 30 days (`revenueDays: 30`); its stock and sell-through are all-channel, 12-month figures and are labelled that way.
+- **Tracked stock** = save each product's `tracksInventory` in the extract (the query already asks for it). `false` → `tracked: false`, so a 0 count is not treated as a sellout. Extracts from before 13 Oct don't have it.
 
 ## Findings from the first sync (13 Oct 2026)
 

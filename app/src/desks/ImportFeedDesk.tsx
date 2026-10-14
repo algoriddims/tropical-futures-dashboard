@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useTerminal } from '@/terminal/TerminalContext';
+import { useTerminal } from '@/terminal/useTerminal';
 import { fetchImportFeed } from '@/game/remote';
 import type { ImportFeedEntry } from '@/game/remote';
 

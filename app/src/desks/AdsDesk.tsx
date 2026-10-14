@@ -1,22 +1,59 @@
-import { useTerminal } from '@/terminal/TerminalContext';
-import { campaignVerdict } from '@/game/engine';
+import { useTerminal } from '@/terminal/useTerminal';
+import { campaignVerdict, monthSpend } from '@/game/engine';
+import { money } from '@/game/format';
 
 export default function AdsDesk() {
   const { data, metrics } = useTerminal();
   if (!data || !metrics) return null;
 
+  // Not connected: say so once, and show what the bank does know (Meta billing),
+  // instead of a row of $0 tiles that read as measured.
+  if (metrics.spend === null && data.campaigns.length === 0) {
+    const months = (data.cashflow ?? []).filter((m) => m.spend.ADS);
+    return (
+      <div className="h-full overflow-y-auto p-2 space-y-2">
+        <section className="window" aria-label="Ads">
+          <div className="window-head">
+            <h2 className="wh-title">ADS</h2>
+            <span className="wh-note">META ADS NOT CONNECTED</span>
+          </div>
+          <div className="window-body space-y-3">
+            <p className="stat-sub">
+              NO CAMPAIGN, SPEND OR ROAS DATA IS SYNCED, SO NONE IS SHOWN — NOT ZERO, UNKNOWN. CONNECTING META ADS (READ-ONLY) WOULD ADD SPEND, ATTRIBUTED REVENUE AND ROAS PER CAMPAIGN.
+            </p>
+            {months.length > 0 && (
+              <div>
+                <div className="stat-label">META BILLING SEEN ON THE BUSINESS BANK + CARD</div>
+                <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1 font-display">
+                  {months.map((m) => (
+                    <span key={m.month}>
+                      <span className="dim">{new Date(`${m.month}-15`).toLocaleString('en-US', { month: 'short' }).toUpperCase()}{m.partial ? '*' : ''} </span>
+                      <span className="tier-red">{money(m.spend.ADS)}</span>
+                      <span className="dim"> · {Math.round(((m.spend.ADS ?? 0) / (monthSpend(m) || 1)) * 100)}% OF SPEND</span>
+                    </span>
+                  ))}
+                </div>
+                <p className="stat-sub mt-1">BILLING DATES, NOT THE DAYS ADS RAN. * MONTH NOT FINISHED.</p>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">SPEND</div>
-          <div className={`font-display text-3xl ${metrics.spend !== null ? 'tier-red' : 'dim'}`}>{metrics.spend !== null ? `$${metrics.spend.toLocaleString()}` : '—'}</div>
+          <div className={`font-display text-3xl ${metrics.spend !== null ? 'tier-red' : 'dim'}`}>{money(metrics.spend)}</div>
           {metrics.spend === null && <div className="text-[0.72rem] dim">META ADS NOT CONNECTED</div>}
         </div>
         <div className="panel p-2.5">
           <div className="font-display text-sm dim">ATTRIBUTED REVENUE</div>
           <div className="font-display text-3xl text-[var(--vhs-white)]">
-            ${data.campaigns.reduce((s, c) => s + c.revenue, 0).toLocaleString()}
+            {money(data.campaigns.reduce((s, c) => s + c.revenue, 0))}
           </div>
         </div>
         <div className="panel p-2.5">
@@ -63,8 +100,8 @@ export default function AdsDesk() {
                     <div className="warm">{c.name}</div>
                     <div className="dim text-[0.68rem]">{c.status}</div>
                   </td>
-                  <td className="px-2 py-2 text-right tier-red font-display text-base">${c.spend.toLocaleString()}</td>
-                  <td className="px-2 py-2 text-right text-[var(--vhs-white)] font-display text-base">${c.revenue.toLocaleString()}</td>
+                  <td className="px-2 py-2 text-right tier-red font-display text-base">{money(c.spend)}</td>
+                  <td className="px-2 py-2 text-right text-[var(--vhs-white)] font-display text-base">{money(c.revenue)}</td>
                   <td className={`px-2 py-2 text-right font-display text-base ${roas >= data.targetRoas ? 'phosphor' : roas < metrics.breakEvenRoas ? 'tier-red' : 'tier-amber'}`}>
                     {roas.toFixed(2)}
                   </td>

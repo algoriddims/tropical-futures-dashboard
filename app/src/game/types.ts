@@ -24,6 +24,8 @@ export interface Product {
   soldTotal: number;
   published: boolean;
   restockPolicy?: RestockPolicy;
+  /** false = the source doesn't track stock for it (made to order / untracked): stock 0 is not a sellout. */
+  tracked?: boolean;
 }
 
 export interface PipelineItem {
@@ -48,8 +50,10 @@ export interface Channel {
   name: string;            // ONLINE STORE / stockist / pop-up
   location: string;
   type: 'ONLINE' | 'STOCKIST' | 'POPUP';
-  revenue: number;         // selected period
+  revenue: number;         // over revenueDays (sync-defined period), not the UI range
   orders: number;
+  /** Days the revenue/orders cover (e.g. 30 for the Shopify sync); absent = unknown period. */
+  revenueDays?: number;
   stock: ChannelStock[];   // per-product allocation (empty for ONLINE — derived from products)
 }
 
@@ -166,7 +170,10 @@ export interface ParkData {
   days: DayPoint[];
   quests: Quest[];
   costs: CostItem[];
-  bankBalance: number;     // current bank account (manual entry until a feed exists)
+  /** Business cash (checking + savings): synced from the bank when accounts exist, else entered by hand. null = unknown — never treated as $0. */
+  bankBalance: number | null;
+  /** Planning input: monthly sales goal (shop currency); 0/absent = not set. */
+  monthlySalesGoal?: number;
   repeatRate?: number;     // as reported by the source; absent = unavailable
   refundRate?: number;     // as reported by the source; absent = unavailable
   meta?: SnapshotMeta;

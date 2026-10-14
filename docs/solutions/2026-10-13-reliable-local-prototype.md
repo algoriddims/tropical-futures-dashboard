@@ -44,6 +44,8 @@ The Claude Code sync can now send these. Older `park-data.json` files still impo
 }
 ```
 
+Added later (13 Oct audit pass, also optional): `products[].tracked` (`false` = stock not tracked, so 0 isn't a sellout), `channels[].revenueDays` (the period a channel's revenue covers), `bankBalance: null` (unknown), and the terminal-owned `monthlySalesGoal`.
+
 `guestsToday` is no longer read. Terminal-owned fields (`bankBalance`, `costs`, `growthTargetPct`, `wholesalePct`, `nextDrop`, `annualBudget`) and `quests` may be omitted.
 
 ## Verification actually run
@@ -56,7 +58,7 @@ The Claude Code sync can now send these. Older `park-data.json` files still impo
 
 ## Known limitations (not fixed in this milestone)
 
-- **Bank balance of $0 when unknown.** A snapshot without `bankBalance`, on a browser where it was never entered, shows `PARK CASH $0`, and runway and forecast use 0. Making it truly "unknown" touches runway, forecast and several desks. It is the next small fix.
+- ~~**Bank balance of $0 when unknown.**~~ Fixed in the 13 Oct audit pass: unknown is now `null` (see [docs/reviews/2026-10-13-audit.md](../reviews/2026-10-13-audit.md)).
 - Shelf edits record time and the replaced value, but no author or reason (contract case 8 asks for both). There is one active edit per cell and no full history.
 - Validation enforces types and identities, not business plausibility (e.g. `soldTotal` vs `startInventory`).
 - Currency, business timezone and the definition of the $2K monthly sales goal are still unset. Money is shown without a currency code. Day buckets use whatever the sync sends.

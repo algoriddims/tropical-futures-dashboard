@@ -89,6 +89,9 @@ const snapshot = (soldAtTropa) => ({
   await page.waitForTimeout(200);
   t = await body();
   check('invalid import shows field-level error', t.includes('NOT IMPORTED') && t.includes('PRODUCTS[0].STOCK: MISSING'));
+  await page.keyboard.press('Escape'); await page.click('button[title="IMPORT SYNC DATA"]');
+  await page.keyboard.press('l'); await page.waitForTimeout(120);
+  check('desk keys are ignored while a dialog is open', !(await body()).includes('STOCK OUT IN THE WORLD') && (await page.locator('[aria-modal="true"]').count()) === 1);
   await page.click('button:has-text("CANCEL")');
   check('invalid import left sample data in place', (await body()).includes('SAMPLE DATA — INVENTED NUMBERS'));
 
@@ -96,9 +99,11 @@ const snapshot = (soldAtTropa) => ({
   await page.click('button[title="IMPORT SYNC DATA"]');
   await page.fill('textarea', JSON.stringify(snapshot(4)));
   await page.click('button:text-is("IMPORT")');
-  await page.waitForSelector('text=SINCE LAST SYNC');
+  await page.waitForSelector('text=LAST SYNC');
+  // desk keys are ignored while a dialog is open; the import dialog closes itself after success
+  await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   t = await body();
-  check('valid import renders snapshot', t.includes('SINCE LAST SYNC'));
+  check('valid import renders snapshot', t.includes('LAST SYNC'));
   check('old coverage flagged even though just imported', t.includes('SYNC NEEDED') && /COVERAGE \d+D AGO/.test(t) && /IMPORTED \d+M AGO/.test(t));
   check('missing sessions/rates shown as unavailable', t.includes('NEEDS SESSIONS') && t.includes('NOT IN DATA'));
   check('data notes stay off the overview (pointer to the feed only)', t.includes('1 DATA NOTE FROM THIS SYNC') && !t.includes('SMOKE NOTE ONE'));
@@ -128,7 +133,7 @@ const snapshot = (soldAtTropa) => ({
   await page.click('button[title="IMPORT SYNC DATA"]');
   await page.fill('textarea', JSON.stringify(snapshot(5)));
   await page.click('button:text-is("IMPORT")');
-  await page.waitForTimeout(900);
+  await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   await page.keyboard.press('l'); await page.waitForTimeout(150);
   t = await body();
   check('moved sync value raises a conflict', t.includes('SHELF COUNT CONFLICTS · 1') && t.includes('LATEST SYNC SAYS 5'));
