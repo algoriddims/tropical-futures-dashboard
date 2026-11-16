@@ -4,6 +4,7 @@ import type { Metrics, SyncDelta } from '@/game/engine';
 import type { ShelfEditStatus, ShelfField } from '@/game/overrides';
 import type { Look } from './look';
 import type { DeskKey } from './desks';
+import type { ChannelFilter } from '@/analytics/channels';
 
 export interface LiveEvent {
   id: number;
@@ -17,8 +18,12 @@ export interface TerminalState {
   notices: Notice[];
   desk: DeskKey;
   setDesk: (d: DeskKey) => void;
+  /** Reporting period: the last N complete days (7, 14 or 30) vs the N days before. */
   range: number;
   setRange: (r: number) => void;
+  /** Channel group the sales and profit panels show; stock is never filtered. */
+  channelFilter: ChannelFilter;
+  setChannelFilter: (c: ChannelFilter) => void;
   helpOpen: boolean;
   setHelpOpen: (b: boolean) => void;
   /** Visual look — presentational only. */
@@ -61,6 +66,15 @@ export interface TerminalState {
   exportStored: () => string;
   /** Remove everything this browser stored (cached snapshot + typed-in entries) and reload. */
   forgetDevice: () => void;
+  /** Whether typed-in records are saved on the server ('local' = no server, browser only). */
+  manualSync: ManualSyncState;
+}
+
+export interface ManualSyncState {
+  state: 'local' | 'saving' | 'saved' | 'unsaved' | 'conflict';
+  revision?: number;
+  savedAt?: string;
+  message?: string;
 }
 
 export const TerminalCtx = createContext<TerminalState | null>(null);

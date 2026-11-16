@@ -8,9 +8,10 @@ import { money } from '@/game/format';
 import { describeFreshness } from '@/game/freshness';
 import { nextLook } from './look';
 
+// Complete days only (no partial "today"); each compared with the period just before.
 const RANGES = [
-  { key: '1', label: 'TODAY', days: 1 },
-  { key: '2', label: '7D', days: 7 },
+  { key: '1', label: '7D', days: 7 },
+  { key: '2', label: '14D', days: 14 },
   { key: '3', label: '30D', days: 30 },
 ];
 
@@ -92,7 +93,7 @@ export function TopBar() {
 }
 
 export function StatusBar() {
-  const { data, metrics, desk, sourceName, notices, imported, importedAt, shared } = useTerminal();
+  const { data, metrics, desk, sourceName, notices, imported, importedAt, shared, manualSync } = useTerminal();
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 1000);
@@ -124,6 +125,11 @@ export function StatusBar() {
             {f.label} {f.text}
           </span>
         ))}
+        {shared === 'server' && (
+          <span className={`hidden md:inline ${manualSync.state === 'unsaved' || manualSync.state === 'conflict' ? 'tier-amber' : 'dim'}`} title="WHERE YOUR TYPED-IN ENTRIES (COSTS, GOAL, PLANNING, SHELF COUNTS) ARE KEPT">
+            {manualSync.state === 'saving' ? 'SAVING ENTRIES…' : manualSync.state === 'saved' ? 'ENTRIES SAVED' : manualSync.state === 'local' ? 'ENTRIES: THIS BROWSER' : 'ENTRIES NOT SAVED'}
+          </span>
+        )}
         {shared === 'server' && <span className="dim hidden md:inline" title="DATA COMES FROM YOUR SERVER, SHARED ACROSS DEVICES">SHARED</span>}
         <span className={`badge ${badgeCls}`}>{badgeText}</span>
         <span className="warm hidden sm:inline">{now.toLocaleTimeString('en-GB')}</span>
@@ -137,7 +143,7 @@ export function HelpOverlay() {
   if (!helpOpen) return null;
   const rows = [
     ...DESKS.map((d) => [d.key.toUpperCase(), d.title]),
-    ['1 / 2 / 3', 'RANGE: TODAY / 7D / 30D'],
+    ['1 / 2 / 3', 'PERIOD: LAST 7 / 14 / 30 COMPLETE DAYS'],
     ['T', 'SWITCH LOOK: PAPER / DARK / TERMINAL'],
     ['?', 'THIS CHEAT SHEET'],
     ['ESC', 'CLOSE'],

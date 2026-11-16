@@ -311,6 +311,35 @@ describeServer('server', () => {
     assert.deepEqual((await readdir(dir)).filter((f) => f.endsWith('.tmp')), []);
   });
 
+  test('manual records: durable, versioned, and a stale device gets 409 instead of overwriting', async () => {
+    const putManual = (body, headers = {}) =>
+      request('PUT', '/api/manual', { headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    assert.deepEqual((await request('GET', '/api/manual')).json, { manual: null });
+    assert.equal((await request('GET', '/api/manual', { auth: false })).status, 401);
+
+    const first = await putManual({ baseRevision: null, payload: { costs: [{ id: 'c1', amount: 10 }] } });
+    assert.equal(first.status, 200);
+    assert.equal(first.json.revision, 1);
+    const second = await putManual({ baseRevision: 1, payload: { costs: [], monthlySalesGoal: 2000 } });
+    assert.equal(second.json.revision, 2);
+
+    // a device still on revision 1 must not overwrite revision 2
+    const stale = await putManual({ baseRevision: 1, payload: { costs: [{ id: 'old' }] } });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.json.current.revision, 2);
+    assert.deepEqual(stale.json.current.payload, { costs: [], monthlySalesGoal: 2000 });
+
+    const got = await request('GET', '/api/manual');
+    assert.equal(got.json.revision, 2);
+    assert.equal(got.headers['cache-control'], 'no-store');
+    assert.ok((await readdir(dir)).some((f) => /^manual-\d+-000001\.json$/.test(f)), 'previous revision kept');
+
+    assert.equal((await putManual({ baseRevision: 2, payload: [] })).status, 422);
+    assert.equal((await putManual({ payload: {} })).status, 422);
+    assert.equal((await putManual({ baseRevision: 2, payload: {} }, { Origin: 'https://evil.example' })).status, 403);
+    assert.equal((await request('PUT', '/api/manual', { headers: { 'Content-Type': 'text/plain' }, body: '{}' })).status, 415);
+  });
+
   test('security headers and asset caching', async () => {
     const index = await request('GET', '/');
     const asset = /\.\/(assets\/[^"]+\.js)"/.exec(index.text)?.[1];

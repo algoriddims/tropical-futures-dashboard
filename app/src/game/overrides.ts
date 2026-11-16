@@ -297,8 +297,57 @@ export function exportBackup(now: Date = new Date()): string {
     }
   };
   return JSON.stringify(
-    { exportedAt: now.toISOString(), imported: get(DATA_KEY), previous: get(PREV_KEY), manual: get(KEY) },
+    {
+      exportedAt: now.toISOString(), imported: get(DATA_KEY), previous: get(PREV_KEY), manual: get(KEY),
+      // entries that lost to a newer save from another device
+      conflicts: (() => {
+        try { return Object.keys(localStorage).filter((k) => k.startsWith('tfi-manual-conflict-')).map((k) => ({ key: k, manual: get(k) })); } catch { return []; }
+      })(),
+    },
     null,
     2,
   );
+}
+
+// ── Server sync of manual records ─────────────────────────────────────────
+
+const SYNC_KEY = 'tfi-manual-sync-v1';
+
+/** Which server revision this browser's manual records are based on, and whether it has unsaved edits. */
+export interface ManualSyncMeta { revision: number | null; dirty: boolean }
+
+export function loadManualSync(): ManualSyncMeta {
+  try {
+    const raw = localStorage.getItem(SYNC_KEY);
+    const p = raw ? JSON.parse(raw) : null;
+    if (p && typeof p === 'object' && typeof p.dirty === 'boolean' && (p.revision === null || Number.isInteger(p.revision))) return p;
+  } catch { /* fall through */ }
+  // Never synced: entries typed before server sync existed count as unsaved,
+  // so they're uploaded (or stashed on a clash) instead of silently replaced.
+  return { revision: null, dirty: Object.keys(loadManual()).length > 0 };
+}
+
+export function saveManualSync(m: ManualSyncMeta): void {
+  try { localStorage.setItem(SYNC_KEY, JSON.stringify(m)); } catch { /* storage blocked: sync state only for this session */ }
+}
+
+/** Keep a copy of local edits that lost to another device's newer save. */
+export function stashManual(m: Partial<ManualSlices>): void {
+  try { localStorage.setItem(`tfi-manual-conflict-${Date.now()}`, JSON.stringify(m)); } catch { /* best effort */ }
+}
+
+export type ManualDecision = 'adopt-server' | 'push-local' | 'conflict' | 'none';
+
+/**
+ * Reconcile this browser's manual records with the server's on load.
+ *  - nothing on the server: push local entries if there are any (first sync / migration)
+ *  - unsaved local edits based on the server's current revision: push them
+ *  - unsaved local edits based on an older revision: conflict — server wins, local is stashed
+ *  - otherwise: adopt the server's records
+ */
+export function reconcileManual(local: Partial<ManualSlices>, meta: ManualSyncMeta, server: { revision: number } | null): ManualDecision {
+  const hasLocal = Object.keys(local).length > 0;
+  if (!server) return hasLocal ? 'push-local' : 'none';
+  if (meta.dirty) return meta.revision === server.revision ? 'push-local' : 'conflict';
+  return meta.revision === server.revision ? 'none' : 'adopt-server';
 }

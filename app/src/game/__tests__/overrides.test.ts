@@ -112,3 +112,24 @@ describe('imported snapshot storage', () => {
     expect(loadPreviousSync()?.bankBalance).toBe(fixtureData.bankBalance);
   });
 });
+
+describe('manual records sync with the server', () => {
+  it('reconciles local and server copies without losing edits', async () => {
+    const { reconcileManual } = await import('../overrides');
+    const local = { monthlySalesGoal: 2000 };
+    expect(reconcileManual({}, { revision: null, dirty: false }, null)).toBe('none');
+    expect(reconcileManual(local, { revision: null, dirty: true }, null)).toBe('push-local');      // first sync / migration
+    expect(reconcileManual(local, { revision: 3, dirty: true }, { revision: 3 })).toBe('push-local'); // edits on the latest revision
+    expect(reconcileManual(local, { revision: 2, dirty: true }, { revision: 3 })).toBe('conflict');   // another device saved first
+    expect(reconcileManual(local, { revision: 2, dirty: false }, { revision: 3 })).toBe('adopt-server');
+    expect(reconcileManual(local, { revision: 3, dirty: false }, { revision: 3 })).toBe('none');
+  });
+
+  it('a browser with entries but no sync marker treats them as unsaved', async () => {
+    const { loadManualSync, saveManual } = await import('../overrides');
+    localStorage.clear();
+    expect(loadManualSync()).toEqual({ revision: null, dirty: false });
+    saveManual({ monthlySalesGoal: 2000 });
+    expect(loadManualSync()).toEqual({ revision: null, dirty: true });
+  });
+});

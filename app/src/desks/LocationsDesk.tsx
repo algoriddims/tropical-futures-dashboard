@@ -6,6 +6,9 @@ import { shelfKey } from '@/game/overrides';
 import type { ShelfEditStatus, ShelfField } from '@/game/overrides';
 import { InlineNumber } from '@/components/InlineEdit';
 import { money, pct } from '@/game/format';
+import { useAnalytics } from './analytics/useAnalytics';
+import { ChannelComparison } from './analytics/Channels';
+import { formatRange } from '@/analytics/period';
 
 const TYPE_TONE: Record<Channel['type'], string> = {
   ONLINE: 'tier-green',
@@ -15,6 +18,7 @@ const TYPE_TONE: Record<Channel['type'], string> = {
 
 export default function LocationsDesk() {
   const { data, editShelf, resolveShelfEdit, shelfStatus, storageOk } = useTerminal();
+  const an = useAnalytics();
   if (!data) return null;
 
   const statusByKey = new Map(shelfStatus.map((s) => [shelfKey(s.edit), s]));
@@ -32,6 +36,15 @@ export default function LocationsDesk() {
 
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
+      {an.kind === 'ok' && (
+        <section className="window" aria-labelledby="ch-h">
+          <div className="window-head flex-wrap">
+            <h2 id="ch-h" className="wh-title">DTC VS WHOLESALE · {formatRange(an.view.cmp.current)}</h2>
+            <span className="wh-note">PRIOR: {formatRange(an.view.cmp.prior)}</span>
+          </div>
+          <div className="window-body"><ChannelComparison v={an.view} /></div>
+        </section>
+      )}
       {/* consignment summary */}
       <div className="window">
         <div className="window-head">

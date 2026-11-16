@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTerminal } from './useTerminal';
 import { Dialog } from './Dialog';
 
@@ -12,6 +12,21 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
   const [errors, setErrors] = useState<string[] | null>(null);
   const [ok, setOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Picking the file avoids copy-paste, which on phones and in previews often
+  // grabs only part of it.
+  const pickFile = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      setRaw(await f.text());
+      setFileName(`${f.name} · ${Math.round(f.size / 1024)} KB`);
+      setErrors(null);
+    } catch {
+      setErrors(['COULD NOT READ THAT FILE — TRY CHOOSING IT AGAIN']);
+    }
+  };
 
   const doImport = async () => {
     setBusy(true);
@@ -58,11 +73,28 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
               {sharedError.map((e, i) => <div key={i}>◆ {e}</div>)}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              data-autofocus
+              onClick={() => fileRef.current?.click()}
+              className="keycap-btn border border-[var(--crt-line)] px-2 py-1 font-display text-sm phosphor"
+            >
+              CHOOSE FILE…
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-label="Choose park-data.json"
+              onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }}
+            />
+            <span className="stat-sub">{fileName ? `LOADED ${fileName}` : 'OR PASTE THE WHOLE FILE BELOW'}</span>
+          </div>
           <textarea
-            data-autofocus
             aria-label="park-data.json contents"
             value={raw}
-            onChange={(e) => { setRaw(e.target.value); setErrors(null); }}
+            onChange={(e) => { setRaw(e.target.value); setErrors(null); setFileName(null); }}
             rows={10}
             spellCheck={false}
             placeholder='{"products": [...], "pipeline": [...], "channels": [...], ...}'
