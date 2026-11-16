@@ -106,3 +106,24 @@ export interface MetricResult<T> {
 }
 
 export const unavailable = <T,>(reason: string): MetricResult<T> => ({ status: 'unavailable', value: null, reason });
+
+/**
+ * Stock the owner expects to arrive, typed in by hand (Shopify's own
+ * "incoming" quantity carries no date). `variantId` is null when the size
+ * split isn't known; such an entry only counts for single-variant products.
+ */
+export interface IncomingStock {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  units: number;
+  expectedDate: Ymd;
+  note?: string;
+}
+
+/** Owner-supplied planning inputs for the stock checks. */
+export interface StockPlan {
+  /** Weeks from placing an order to stock in hand; null = not set (no reorder-by date is shown). */
+  leadTimeWeeks: number | null;
+  incoming: IncomingStock[];
+}

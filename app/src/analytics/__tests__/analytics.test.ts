@@ -7,7 +7,7 @@ import { convert, currencyExponent, formatMoney, parseMinor, sumMoney, totalsByC
 import { addDays, coverage, dayCount, lastCompleteDays, todayIn } from '../period';
 import type { AnalyticsSnapshot, VariantDailyRow, VariantRecord } from '../types';
 import {
-  aovAtPurchase, buildExceptions, change, changePp, channelBreakdown, costCoverage, dropSellThrough, grossMargin, grossProfit,
+  aovAtPurchase, buildExceptions, reorderAdvice, stockRisk, change, changePp, channelBreakdown, costCoverage, dropSellThrough, grossMargin, grossProfit,
   netProductRevenue, periodTotals, productPerformance, returningShare, returnRate, sizeKey, sortSizes, stockPosition, unitsPerOrder, weeksOfCover,
 } from '../metrics';
 import { channelGroup, dedupeWholesale } from '../channels';
@@ -283,6 +283,115 @@ describe('exceptions', () => {
     expect(oos?.numbers[0]).toBe('L: 4 sold in the last 28 days, 0 available');
     expect(ex.find((e) => e.id === 'unmapped')?.numbers[0]).toBe('Draft Orders: 1 orders, 4 units, $0.00 net product revenue');
     expect(ex.every((e) => e.rule.length > 10 && e.drill.desk)).toBe(true);
+  });
+});
+
+// ── stock risk: sales at risk, reorder-by, stock on the way ────────────────
+
+// A hot cap (28 sold in 28 days, 10 left) next to a slow tee size (2 sold, none left).
+function riskFixture(): AnalyticsSnapshot {
+  const f = fixture();
+  const days = Array.from({ length: 28 }, (_, i) => `2026-10-${String(i + 1).padStart(2, '0')}`);
+  return {
+    ...f,
+    extractedAt: '2026-10-29T12:00:00Z', inventoryAsOf: '2026-10-29T12:00:00Z',
+    salesCoverage: { from: '2026-10-01', to: '2026-10-28', missing: [] },
+    daily: [],
+    variantDaily: [
+      ...days.map((d) => vrow(d, 'Online Store', 'CAP', 'CAP1', { grossSales: 4500, discounts: -500, netSales: 4000, qtyOrdered: 1, netItems: 1 })),
+      vrow('2026-10-10', 'Online Store', 'TEE', 'TEE-S', { grossSales: 6000, netSales: 6000, qtyOrdered: 2, netItems: 2 }),
+    ],
+    variants: [
+      variant('CAP1', 'CAP', 'Cap', null, [loc(10)], { options: [{ name: 'Color', value: 'Black' }] }),
+      variant('TEE-S', 'TEE', 'Tee', 'S', [loc(0)]),
+      variant('TEE-M', 'TEE', 'Tee', 'M', [loc(9)]),
+    ],
+  };
+}
+const RISK_CMP = { current: { from: '2026-10-15', to: '2026-10-28' }, prior: { from: '2026-10-01', to: '2026-10-14' }, days: 14, timezone: 'America/New_York' };
+const capOf = (f: AnalyticsSnapshot) => f.variants.find((v) => v.variantId === 'CAP1')!;
+
+describe('stock risk', () => {
+  it('projects the recent pace day by day: unmet units, their value and the run-out day', () => {
+    const f = riskFixture();
+    const r = stockRisk(f, capOf(f))!;
+    expect(r.asOf).toBe('2026-10-29');
+    expect(r.dailyPace).toBe(1);
+    expect(r.lostUnits).toBe(18);            // 28 days of demand, 10 in stock
+    expect(r.atRisk).toBe(18 * 4000);        // at the average net price actually paid ($40), not list ($45)
+    expect(r.runsOutOn).toBe('2026-11-09');  // the 11th day
+    expect(r.gapDays).toBe(18);
+    expect(r.reorderBy).toBeNull();          // no lead time set → no date invented
+  });
+
+  it('has nothing to project without recent sales, for bundles or untracked stock', () => {
+    const f = riskFixture();
+    expect(stockRisk(f, f.variants.find((v) => v.variantId === 'TEE-M')!)).toBeNull();
+    expect(stockRisk(f, { ...capOf(f), tracked: false })).toBeNull();
+    expect(stockRisk(f, { ...capOf(f), isBundle: true })).toBeNull();
+  });
+
+  it('gives a reorder-by date from the lead time, and says "order now" when it has passed', () => {
+    const f = riskFixture();
+    const soon = stockRisk(f, capOf(f), { leadTimeWeeks: 1, incoming: [] })!;
+    expect(soon.reorderBy).toBe('2026-11-02');
+    expect(reorderAdvice('Black', soon, { leadTimeWeeks: 1, incoming: [] })[0]).toBe('Black: reorder by 2 Nov to land before stock runs out around 9 Nov (1-week lead time)');
+    const late = stockRisk(f, capOf(f), { leadTimeWeeks: 8, incoming: [] })!;
+    expect(late.landsIfOrderedNow).toBe('2026-12-24');
+    expect(reorderAdvice('Black', late, { leadTimeWeeks: 8, incoming: [] })[0]).toContain('order now — stock runs out around 9 Nov and an order placed today lands around 24 Dec (8-week lead time), about 45 days without stock');
+  });
+
+  it('counts dated stock on the way; an arrival part-way through shortens the gap', () => {
+    const f = riskFixture();
+    const inc = (expectedDate: string, units: number, variantId: string | null = null) => ({ id: `i-${expectedDate}`, productId: 'CAP', variantId, units, expectedDate });
+    const intime = stockRisk(f, capOf(f), { leadTimeWeeks: null, incoming: [inc('2026-11-05', 40)] })!;
+    expect(intime.lostUnits).toBe(0);
+    const lateish = stockRisk(f, capOf(f), { leadTimeWeeks: null, incoming: [inc('2026-11-13', 40)] })!;
+    expect(lateish.gapDays).toBe(4);         // out 9–12 Nov, restocked on the 13th
+    expect(lateish.lostUnits).toBe(4);
+    expect(lateish.atRisk).toBe(4 * 4000);
+  });
+
+  it('does not count an arrival whose date has passed, or one with no size on a multi-size product', () => {
+    const f = riskFixture();
+    const past = stockRisk(f, capOf(f), { leadTimeWeeks: null, incoming: [{ id: 'p', productId: 'CAP', variantId: null, units: 40, expectedDate: '2026-10-29' }] })!;
+    expect(past.lostUnits).toBe(18);
+    expect(past.overdue).toHaveLength(1);
+    const teeS = f.variants.find((v) => v.variantId === 'TEE-S')!;
+    const noSize = stockRisk(f, teeS, { leadTimeWeeks: null, incoming: [{ id: 't', productId: 'TEE', variantId: null, units: 20, expectedDate: '2026-11-03' }] }, 2)!;
+    expect(noSize.arrivals).toHaveLength(0);
+    expect(noSize.unallocated).toHaveLength(1);
+    expect(noSize.lostUnits).toBe(2);
+  });
+});
+
+describe('exceptions ranked by sales at risk', () => {
+  it('a fast seller running low outranks a slow size that is already out', () => {
+    const f = riskFixture();
+    const ex = buildExceptions(f, RISK_CMP, productPerformance(f, RISK_CMP));
+    expect(ex.map((e) => e.id)).toEqual(['low-CAP', 'oos-TEE']);
+    expect(ex[0].atRisk).toBe(72000);        // 18 caps × $40
+    expect(ex[1].atRisk).toBe(6000);         // 2 tees × $30
+    expect(ex[0].actions[0]).toContain('set a lead time');
+    // a size that is already out is told so, not given a run-out date
+    expect(ex[1].actions[0]).toBe('S: out of stock now — set a lead time on the inventory page to see when a new order would land');
+    const withLead = buildExceptions(f, RISK_CMP, productPerformance(f, RISK_CMP), undefined, undefined, { leadTimeWeeks: 6, incoming: [] });
+    expect(withLead[1].actions[0]).toBe('S: out of stock now — an order placed today lands around 10 Dec (6-week lead time)');
+  });
+
+  it('stock on the way that closes the gap removes the low-stock exception', () => {
+    const f = riskFixture();
+    const plan = { leadTimeWeeks: 8, incoming: [{ id: 'a', productId: 'CAP', variantId: null, units: 40, expectedDate: '2026-11-05' }] };
+    const ex = buildExceptions(f, RISK_CMP, productPerformance(f, RISK_CMP), undefined, undefined, plan);
+    expect(ex.map((e) => e.id)).toEqual(['oos-TEE']);
+  });
+
+  it('stock arriving after the run-out keeps the exception, with the shorter gap', () => {
+    const f = riskFixture();
+    const plan = { leadTimeWeeks: 8, incoming: [{ id: 'a', productId: 'CAP', variantId: null, units: 40, expectedDate: '2026-11-13', note: 'reorder' }] };
+    const cap = buildExceptions(f, RISK_CMP, productPerformance(f, RISK_CMP), undefined, undefined, plan).find((e) => e.id === 'low-CAP')!;
+    expect(cap.atRisk).toBe(16000);
+    expect(cap.actions).toEqual(['Black: 40 units expected 13 Nov (reorder)', "Black: about 4 days short of stock in the next 28 days even with what's on the way"]);
   });
 });
 

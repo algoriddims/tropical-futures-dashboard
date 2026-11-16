@@ -38,8 +38,8 @@ export default function GoalsDesk() {
         {/* the monthly sales goal */}
         <section className="window" aria-label="Monthly sales goal">
           <div className="window-head">
-            <h2 className="wh-title">MONTHLY SALES GOAL</h2>
-            <span className="wh-note">SHOPIFY NET SALES (AFTER DISCOUNTS AND RETURNS, BEFORE SHIPPING AND TAX) · USD</span>
+            <h2 className="wh-title">MONTHLY GOAL</h2>
+            <span className="wh-note">THE GOAL COUNTS EVERY CHANNEL — THE OVERVIEW TRACKS IT ON MONEY RECEIVED. THE FIGURES HERE ARE SHOPIFY NET SALES ONLY · USD</span>
           </div>
           <div className="window-body grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Stat

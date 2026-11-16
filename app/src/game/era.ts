@@ -7,9 +7,11 @@
 // fit a business view (it files Shopify payouts under "Shopping and gear").
 // Transfers between the synced accounts are excluded so nothing counts twice.
 
-import type { AccountKind, BankAccount, CashInKind, CashMonth, ParkData, SpendKind } from './types';
+import type { AccountKind, BankAccount, BankDeposit, CashInKind, CashMonth, ParkData, SpendKind, VendorSpend } from './types';
 
 export interface EraTxn {
+  /** The bank feed's transaction id. Deposits are tagged by it, so tags survive re-syncs. */
+  id?: string;
   date: string;              // YYYY-MM-DD (transaction date)
   account: string;           // account id in the extract
   amount: number;            // signed: + money in (or card credit), − money out (or card charge)
@@ -88,6 +90,10 @@ const fmt = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(round2(n)).toLocale
 export interface EraLayer {
   accounts: BankAccount[];
   cashflow: CashMonth[];
+  /** Every FROM OWNER / OTHER IN deposit; their monthly sums equal those cashflow lines. */
+  deposits: BankDeposit[];
+  /** Software and uncategorised spending by vendor and month. */
+  vendorSpend: VendorSpend[];
   notes: string[];
 }
 
@@ -116,6 +122,9 @@ export function buildEraLayer(x: EraExtract, now: Date = new Date(x.extractedAt)
   };
   const other: string[] = [];
   const owner: string[] = [];
+  const deposits: BankDeposit[] = [];
+  const seenIds = new Map<string, number>();
+  const vendors = new Map<string, VendorSpend>();
   let fees = 0;
   for (const t of [...x.transactions].sort((a, b) => a.date.localeCompare(b.date))) {
     const c = classify(t, kindOf.get(t.account)!);
@@ -123,11 +132,24 @@ export function buildEraLayer(x: EraExtract, now: Date = new Date(x.extractedAt)
     if (c.kind === 'INTERNAL') continue;
     if (c.kind === 'IN') {
       cm.cashIn[c.to] = round2((cm.cashIn[c.to] ?? 0) + t.amount);
+      if (c.to === 'OWNER_TRANSFERS' || c.to === 'OTHER_IN') {
+        // without a feed id, fall back to the transaction's own facts (+ a counter for exact repeats)
+        const base = t.id ?? `${t.date}|${t.account}|${Math.round(t.amount * 100)}`;
+        const n = seenIds.get(base) ?? 0;
+        seenIds.set(base, n + 1);
+        deposits.push({ id: n ? `${base}#${n + 1}` : base, date: t.date, amount: round2(t.amount), kind: c.to, label: t.description, ...(t.memo ? { memo: t.memo } : {}) });
+      }
       if (c.to === 'OWNER_TRANSFERS') owner.push(`${t.date} ${fmt(t.amount)}${t.memo ? ` "${t.memo}"` : ''}`);
       if (c.to === 'OTHER_IN') other.push(`${t.date} ${t.description} +${fmt(t.amount)}`);
     } else {
       // a refund on a spend line (positive amount) reduces that line
       cm.spend[c.to] = round2((cm.spend[c.to] ?? 0) - t.amount);
+      if (c.to === 'SOFTWARE' || c.to === 'OTHER') {
+        const key = t.description.trim();
+        const v = vendors.get(key) ?? { vendor: key, kind: c.to, byMonth: {} };
+        v.byMonth[cm.month] = round2((v.byMonth[cm.month] ?? 0) - t.amount);
+        vendors.set(key, v);
+      }
       if (c.to === 'OTHER') other.push(`${t.date} ${t.description} ${fmt(-t.amount)}`);
       if (c.to === 'BANK_FEES' && /OVERDRAFT/i.test(t.description)) fees += -t.amount;
     }
@@ -158,7 +180,8 @@ export function buildEraLayer(x: EraExtract, now: Date = new Date(x.extractedAt)
   }
   if (other.length) notes.push(`Not matched to a spending category (shown as Other): ${other.slice(0, 8).join('; ')}${other.length > 8 ? ` and ${other.length - 8} more` : ''}.`);
   notes.push('Shopify payouts arrive net of Shopify fees and on Shopify\'s schedule, so they differ from Shopify net sales.');
-  return { accounts, cashflow, notes };
+  const vendorSpend = [...vendors.values()].sort((a, b) => a.vendor.localeCompare(b.vendor));
+  return { accounts, cashflow, deposits, vendorSpend, notes };
 }
 
 /** Add an ERA layer to a snapshot (e.g. one built from Shopify). */
@@ -170,6 +193,8 @@ export function withEra(d: ParkData, x: EraExtract): ParkData {
     ...d,
     accounts: era.accounts,
     cashflow: era.cashflow,
+    deposits: era.deposits,
+    vendorSpend: era.vendorSpend,
     meta: {
       ...meta,
       sources: [...(meta.sources ?? []), { label: 'ERA', extractedAt: x.extractedAt, coverageEnd: asOf }],

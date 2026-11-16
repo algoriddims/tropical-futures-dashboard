@@ -283,7 +283,7 @@ export function TerminalProvider({ children }: { children: ReactNode }) {
   const onKey = useCallback(
     (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
       // A modal dialog owns the keyboard (it handles its own Esc).

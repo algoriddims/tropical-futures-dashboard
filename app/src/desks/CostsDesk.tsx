@@ -2,6 +2,7 @@ import { useTerminal } from '@/terminal/useTerminal';
 import { monthlyBurn, oneOffCosts, burnByCategory, runwayMonths, monthlyAmount, forecastCashflow, forecastVerdict, trailing30dRevenue, burnSource, actualMonthlySpend, cardOwed, netCash } from '@/game/engine';
 import { money, pct, plural } from '@/game/format';
 import { AccountLines, CashFlowTable } from '@/components/BankAccounts';
+import { DepositTagging, RecurringCharges } from './money/MoneyPanels';
 import type { CostCategory, CostItem } from '@/game/types';
 import { InlineNumber, InlineText, RowBtn } from '@/components/InlineEdit';
 
@@ -99,6 +100,14 @@ export default function CostsDesk() {
               : <div className="stat-sub">NO TRANSACTIONS IN THIS SYNC.</div>}
           </div>
         </section>
+      )}
+
+      {/* what the bank can't label, and what leaves every month */}
+      {synced && (
+        <div className="grid grid-cols-1 gap-2 2xl:grid-cols-2">
+          <DepositTagging />
+          <RecurringCharges />
+        </div>
       )}
 
       {/* finances summary */}

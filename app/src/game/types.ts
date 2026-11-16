@@ -3,7 +3,7 @@
 // retired on 13 Oct 2026). Internal type names such as ParkData and Quest
 // are kept so existing park-data.json syncs still import.
 
-import type { AnalyticsSnapshot } from '../analytics/types';
+import type { AnalyticsSnapshot, IncomingStock } from '../analytics/types';
 
 export type Tier = 'red' | 'amber' | 'green';
 export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'SOLD OUT' | 'CLOSED';
@@ -150,6 +150,32 @@ export interface CashMonth {
   spend: Partial<Record<SpendKind, number>>;
 }
 
+/**
+ * Money that arrived in a business account and is not a Shopify or PayPal
+ * payout: a transfer from the owner, a client or stockist payment, a refund.
+ * The bank can't say which, so each one is tagged by hand (see DepositTag).
+ */
+export interface BankDeposit {
+  id: string;              // stable across syncs (the bank feed's transaction id)
+  date: string;            // YYYY-MM-DD
+  amount: number;          // > 0
+  kind: Extract<CashInKind, 'OWNER_TRANSFERS' | 'OTHER_IN'>;
+  label: string;
+  memo?: string;
+}
+
+/** What a deposit is, for the all-channel goal. Untagged deposits are never counted. */
+export type DepositTag = 'STOCKIST' | 'CLIENT' | 'NOT_REVENUE';
+
+/** Spending at one vendor by calendar month (software and uncategorised lines only). */
+export interface VendorSpend {
+  vendor: string;
+  kind: SpendKind;
+  byMonth: Record<string, number>; // YYYY-MM → amount charged, net of refunds
+}
+
+export type VendorMark = 'KEEP' | 'CUT';
+
 // When the data in a snapshot is FROM, as opposed to when it was imported.
 // All ISO 8601. Every field is optional because older syncs never sent it —
 // a missing date renders as "unknown", never as "just now".
@@ -182,6 +208,17 @@ export interface ParkData {
   /** Synced bank/card accounts; when present, the bank balance comes from these, not manual entry. */
   accounts?: BankAccount[];
   cashflow?: CashMonth[];
+  /** Individual non-payout deposits behind cashflow's FROM OWNER and OTHER IN lines. */
+  deposits?: BankDeposit[];
+  /** Per-vendor monthly spend behind the recurring-charges list. */
+  vendorSpend?: VendorSpend[];
+  /** Manual: what each deposit is (keyed by deposit id). */
+  depositTags?: Record<string, DepositTag>;
+  /** Manual: keep/cut decision per recurring vendor. */
+  vendorMarks?: Record<string, VendorMark>;
+  /** Manual: stock on the way and the reorder lead time. */
+  incomingStock?: IncomingStock[];
+  leadTimeWeeks?: number | null;
   /** Normalized Shopify analytics records (variant grain, minor units) — see src/analytics/types.ts. */
   analytics?: AnalyticsSnapshot;
   grossMargin: number;

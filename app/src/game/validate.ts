@@ -117,6 +117,21 @@ const cashMonth = z.looseObject({
   spend: money,
 });
 
+const ymDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD');
+const deposit = z.looseObject({
+  id: text.min(1),
+  date: ymDate,
+  amount: num.positive(),
+  kind: z.enum(['OWNER_TRANSFERS', 'OTHER_IN']),
+  label: text,
+  memo: text.optional(),
+});
+const vendorSpend = z.looseObject({
+  vendor: text.min(1),
+  kind: z.enum(['PRODUCTION', 'SHIPPING', 'ADS', 'SOFTWARE', 'ZELLE', 'BANK_FEES', 'OTHER']),
+  byMonth: z.record(z.string().regex(/^\d{4}-\d{2}$/, 'must be YYYY-MM'), num),
+});
+
 export const parkDataSchema = z.looseObject({
   products: z.array(product),
   pipeline: z.array(pipelineItem),
@@ -140,6 +155,8 @@ export const parkDataSchema = z.looseObject({
   accounts: z.array(account).optional(),
   analytics: analyticsSchema.optional(),
   cashflow: z.array(cashMonth).optional(),
+  deposits: z.array(deposit).optional(),
+  vendorSpend: z.array(vendorSpend).optional(),
   grossMargin: num.gt(0).max(1),
   targetRoas: num.positive(),
 });
@@ -168,6 +185,18 @@ function crossCheck(d: ParkData): string[] {
   dupes(d.pipeline.map((p) => p.id), 'pipeline');
   dupes(d.channels.map((c) => c.name), 'channels (name)');
   dupes(d.costs.map((c) => c.id), 'costs');
+  if (d.deposits) {
+    dupes(d.deposits.map((x) => x.id), 'deposits');
+    // the deposit list must be exactly what the cash-flow lines add up to,
+    // so tagging deposits can never count money the month didn't receive
+    for (const m of d.cashflow ?? []) {
+      for (const kind of ['OWNER_TRANSFERS', 'OTHER_IN'] as const) {
+        const listed = d.deposits.filter((x) => x.kind === kind && x.date.startsWith(m.month)).reduce((n, x) => n + Math.round(x.amount * 100), 0);
+        const line = Math.round((m.cashIn[kind] ?? 0) * 100);
+        if (listed !== line) errors.push(`deposits: ${m.month} ${kind} lists ${listed / 100} but the cash-flow line is ${line / 100}`);
+      }
+    }
+  }
   const productIds = new Set(d.products.map((p) => p.id));
   d.channels.forEach((c, ci) => {
     dupes(c.stock.map((s) => s.productId), `channels[${ci}].stock`);

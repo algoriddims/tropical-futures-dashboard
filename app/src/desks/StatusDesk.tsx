@@ -11,6 +11,7 @@ import { AccountLines } from '@/components/BankAccounts';
 import { useAnalytics } from './analytics/useAnalytics';
 import { PerformanceSummary } from './analytics/Performance';
 import { ExceptionsPanel } from './analytics/Exceptions';
+import { MoneyInOut } from './money/MoneyPanels';
 import { ProductTable } from './analytics/Products';
 import { ChannelComparison } from './analytics/Channels';
 import { formatRange } from '@/analytics/period';
@@ -111,6 +112,8 @@ export default function StatusDesk() {
 
       {/* business decisions first: performance vs prior, then this week's exceptions */}
       <PerformanceSummary state={an} />
+      {/* the goal counts every channel, so it's measured on money received, not Shopify alone */}
+      <MoneyInOut />
       <ExceptionsPanel state={an} />
 
       {an.kind === 'ok' && (
@@ -166,7 +169,8 @@ export default function StatusDesk() {
             size="text-5xl"
             sub={mtd === null ? 'NO DATED DAILY SALES IN THIS SYNC' : `ON PACE FOR ${money(pace)} · DAY ${now.getDate()} OF ${daysInMonth}`}
           />
-          <div className="mt-2 flex items-center justify-between gap-2 stat-sub">
+          {synced && <p className="stat-sub mt-2">SHOPIFY ONLY. THE GOAL COUNTS EVERY CHANNEL — SEE MONEY IN VS OUT ABOVE.</p>}
+          {!synced && <div className="mt-2 flex items-center justify-between gap-2 stat-sub">
             <span>
               GOAL{' '}
               <InlineNumber
@@ -178,8 +182,8 @@ export default function StatusDesk() {
               />
             </span>
             {goal > 0 && mtd !== null && <span className={mtd >= goal ? 'tier-green' : 'warm'}>{pct((mtd / goal) * 100)}</span>}
-          </div>
-          {goal > 0 && mtd !== null && (
+          </div>}
+          {!synced && goal > 0 && mtd !== null && (
             <div className="mt-1 relative">
               <Bar pct={(mtd / goal) * 100} color={mtd >= goal ? 'var(--palm)' : 'var(--sun)'} />
               {/* where today should be if sales were spread evenly */}

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { MemoryStorage } from './memoryStorage';
 import { installStorage } from './memoryStorage';
 import {
-  applyShelfEdits, discardShelfEdit, exportBackup, loadImported, loadManual, loadPreviousSync,
+  applyManual, extractManual, applyShelfEdits, discardShelfEdit, exportBackup, loadImported, loadManual, loadPreviousSync,
   persistImported, rebaseShelfEdit, recordShelfEdit, saveManual, shelfKey,
 } from '../overrides';
 import type { ShelfEdit } from '../overrides';
@@ -131,5 +131,30 @@ describe('manual records sync with the server', () => {
     expect(loadManualSync()).toEqual({ revision: null, dirty: false });
     saveManual({ monthlySalesGoal: 2000 });
     expect(loadManualSync()).toEqual({ revision: null, dirty: true });
+  });
+});
+
+describe('owner decisions about synced records', () => {
+  const decisions = {
+    depositTags: { 'dep-1': 'STOCKIST' as const },
+    vendorMarks: { 'Some Tool': 'CUT' as const },
+    incomingStock: [{ id: 'in-1', productId: 'P1', variantId: null, units: 40, expectedDate: '2026-11-20' }],
+    leadTimeWeeks: 8,
+  };
+
+  it('are applied from the manual store and round-trip through extractManual', () => {
+    const d = applyManual(clone(fixtureData), decisions);
+    expect(d.depositTags).toEqual(decisions.depositTags);
+    expect(d.leadTimeWeeks).toBe(8);
+    expect(extractManual(d)).toMatchObject(decisions);
+  });
+
+  it('cannot be set by an import: a snapshot carrying them is ignored', () => {
+    const imported = { ...clone(fixtureData), ...decisions } as ParkData;
+    const d = applyManual(imported, {});
+    expect(d.depositTags).toEqual({});
+    expect(d.vendorMarks).toEqual({});
+    expect(d.incomingStock).toEqual([]);
+    expect(d.leadTimeWeeks).toBeNull();
   });
 });
