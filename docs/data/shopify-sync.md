@@ -29,7 +29,7 @@ The performance, products/sizes and channel views read the snapshot's `analytics
      `FROM sales SHOW quantity_ordered, quantity_returned, net_items_sold, gross_sales, discounts, returns, net_sales, cost_of_goods_sold, net_sales_with_cost_recorded GROUP BY sales_channel, product_id, product_variant_id TIMESERIES day SINCE <from> UNTIL <yesterday>`
    - `variants-p*.json` — Admin GraphQL, one file per page:
      `query Variants($after: String) { productVariants(first: 50, after: $after, query: "product_status:active") { pageInfo { hasNextPage endCursor } nodes { id title sku price requiresComponents selectedOptions { name value } product { id title productType status createdAt publishedAt tracksInventory } inventoryItem { id tracked unitCost { amount currencyCode } inventoryLevels(first: 10) { nodes { location { id name } quantities(names: ["available", "on_hand", "committed", "incoming", "reserved", "damaged", "safety_stock", "quality_control"]) { name quantity } } } } } } }`
-   - `meta.json` — shop identity (currency, timezone), `extractedAt`, `inventoryAsOf`, `salesRange`, sessions, recent orders (no customer names or contact details) and Online Store customer windows:
+   - `meta.json` — shop identity (currency, timezone), `extractedAt`, `inventoryAsOf`, `salesRange`, sessions, recent orders (no customer names or contact details; the order's channel is `attribution { displayName }` — Shopify retired `channelInformation` in Admin API 2026-10) and Online Store customer windows:
      `FROM sales SHOW customers, returning_customers, new_customers, orders WHERE sales_channel = 'Online Store' SINCE <from> UNTIL <to>` (one query per window; Shopify can't split this by day, so each window is stored as asked).
    `<yesterday>` = the last complete day in the shop's timezone. Today is never extracted (it would be a partial day).
 2. **Build.** From `app/`:
@@ -38,6 +38,8 @@ The performance, products/sizes and channel views read the snapshot's `analytics
    ```
    `buildAnalytics` (`app/src/analytics/shopifyAdapter.ts`) parses money to integer cents, de-duplicates identical rows (and refuses conflicting ones), records missing days as unknown, flags variant-vs-channel totals that don't reconcile, and refuses costs in a second currency. The legacy views are derived from the same extract (`legacyBridge.ts`), so both agree.
 3. **Upload** as below. Regenerate the metric dictionary after changing definitions: `npx vite-node scripts/metrics-doc.ts` (a test fails if `docs/metrics.md` is out of date).
+
+Small results come back inline instead of as a file; ask for a longer range or more columns so the connector saves them, rather than retyping numbers. Last run: 16 Nov 2026 (sales 16 Nov 2025 – 15 Nov 2026).
 
 The older single-file extract below still builds (legacy views only, no `analytics` block).
 
@@ -72,7 +74,7 @@ Admin GraphQL (`graphql_query`, validated first):
 ```graphql
 query Products($after: String) { products(first: 50, after: $after, query: "status:active") { pageInfo { hasNextPage endCursor } nodes { id title productType tracksInventory totalInventory variants(first: 20) { nodes { title inventoryQuantity price inventoryItem { tracked unitCost { amount currencyCode } } } } } } }
 
-query Orders { orders(first: 25, sortKey: CREATED_AT, reverse: true) { nodes { name createdAt displayFinancialStatus cancelledAt currentTotalPriceSet { shopMoney { amount currencyCode } } customer { numberOfOrders } channelInformation { channelDefinition { channelName } } lineItems(first: 5) { nodes { title variantTitle quantity } } } } }
+query Orders { orders(first: 25, sortKey: CREATED_AT, reverse: true) { nodes { name createdAt displayFinancialStatus cancelledAt currentTotalPriceSet { shopMoney { amount currencyCode } } customer { numberOfOrders } attribution { displayName } lineItems(first: 5) { nodes { title variantTitle quantity } } } } }
 ```
 
 ## Definitions

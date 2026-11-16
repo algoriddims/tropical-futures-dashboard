@@ -53,6 +53,25 @@ describe('ERA classification', () => {
     expect(classify(tx('d', 'card', -40, 'Shopify'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
   });
 
+  it('deposits from vendors we also pay are income, not refunds of that spend line', () => {
+    expect(classify(tx('d', 'chk', 2200, 'Intuit Deposit'), 'CHECKING')).toEqual({ kind: 'IN', to: 'OTHER_IN' });
+    expect(classify(tx('d', 'card', -38, 'Intuit QuickBooks'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
+    expect(classify(tx('d', 'chk', 188, 'Zelle Transfer from Some Studio Inc.'), 'CHECKING')).toEqual({ kind: 'IN', to: 'OTHER_IN' });
+    expect(classify(tx('d', 'chk', -50, 'Zelle Transfer to A Person'), 'CHECKING')).toEqual({ kind: 'OUT', to: 'ZELLE' });
+    // a genuine refund still reduces its spend line
+    expect(classify(tx('d', 'card', 15, 'Cursor'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
+  });
+
+  it('a transfer from an account outside the synced list is money from the owner, not an internal move', () => {
+    const ext = { ...tx('d', 'chk', 500, 'Online Transfer from Checking 0000', true), externalTransfer: true };
+    expect(classify(ext, 'CHECKING')).toEqual({ kind: 'IN', to: 'OWNER_TRANSFERS' });
+    expect(classify(tx('d', 'chk', 10, 'Online Transfer from Savings 2222', true), 'CHECKING').kind).toBe('INTERNAL');
+    const x = extract();
+    x.transactions.push({ ...tx('2026-09-20', 'chk', 500, 'Online Transfer from Checking 0000', true), externalTransfer: true });
+    const sep = buildEraLayer(x).cashflow.find((m) => m.month === '2026-09')!;
+    expect(sep.cashIn.OWNER_TRANSFERS).toBe(500);
+  });
+
   it('UPS matches as a word, not inside other words', () => {
     expect(classify(tx('d', 'chk', -7, 'Certificate of Origin Ups-delbros Inte'), 'CHECKING')).toEqual({ kind: 'OUT', to: 'SHIPPING' });
     expect(classify(tx('d', 'card', -7, 'Meetup Groups'), 'CARD')).toEqual({ kind: 'OUT', to: 'OTHER' });

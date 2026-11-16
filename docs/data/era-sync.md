@@ -32,7 +32,8 @@ To repeat it, say in a Claude session on this repo with ERA and Shopify connecte
 - **Cash on hand** = bank balance − card owed. Card spending is counted when charged, so the balance owed is already-spent money. Runway, the cash forecast, the health score and the "cash is short" move all start from this figure; the overview shows both parts.
 - **No bank data** = unknown, not $0: no runway, no forecast, and an amber "cash position unknown" prompt instead of a red alarm.
 - **Cash flow** is our own classification, not ERA's categories (ERA files Shopify payouts as "Shopping and gear", so its cash-flow tool reports $0 income):
-  - *In:* Shopify payouts, PayPal transfers, transfers from the owner, other.
+  - *In:* Shopify payouts, PayPal transfers, transfers from the owner, other (QuickBooks/Intuit deposits and Zelle payments received land here — they are income, not refunds of the Intuit or Zelle spend lines).
+  - A transfer whose other side is *not* one of the approved accounts (`externalTransfer` in the extract) counts as from the owner, even though the bank words it like an internal transfer. Only that fact is stored, nothing about the other account.
   - *Spending:* production & suppliers (Peachy Print, Alipay, supplier wires), shipping & customs (Qwik Pack and Ship, UPS/DelBros), ads (Meta/Facebook billing), software & subscriptions, Zelle payments, bank fees, other.
   - Moves between the approved accounts (card payments, savings sweeps) are excluded, so card spending counts once — when charged.
   - Rules live in `RULES` in `era.ts`; anything unmatched is listed in the data notes as Other.
@@ -49,6 +50,13 @@ To repeat it, say in a Claude session on this repo with ERA and Shopify connecte
 - **Transfers from the owner** with partner/design memos — "eastern margins design" $672.87, "dsm sales" $871.62, "shrub june sales" $74.83, "phase space" $163.90, "magenta house 1h sales" $914.55. These look like wholesale/consignment/design income routed through a personal account. They're shown as *from owner*, not as sales, until those partners have their own records.
 - Largest spend lines: Peachy Print (production) $1,888 in June; Meta/Facebook billing $203–$890 a month; Qwik Pack and Ship most months; ~$300–$800/month of software and subscriptions.
 - Unclassified (shown as Other): Sikand Media, Renato Aramburu, Ren Stocks.
+
+## Second sync (16 Nov 2026, 1 May – 16 Nov)
+
+- Every account-month of copied spending matched ERA's monthly totals to the cent (by transaction date; posted date does not match for the card).
+- Checking ••9318 is positive again; two QuickBooks (Intuit) deposits arrived in November, each with an Intuit transfer fee, which is listed under Other.
+- New vendor not yet classified (shown as Other): Alibaba.com on the card.
+- Transfer memos are taken from the bank's text as-is, so they read slightly garbled.
 
 ## Limits
 

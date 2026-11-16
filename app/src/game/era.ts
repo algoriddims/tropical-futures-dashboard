@@ -16,6 +16,13 @@ export interface EraTxn {
   description: string;
   memo?: string;             // free text on incoming transfers, kept for context
   linkedTransfer: boolean;   // ERA matched it to a counterpart in another account
+  /**
+   * The counterpart is an account outside the approved list (e.g. the owner's
+   * personal account), so this is real money in or out of the business, not a
+   * move between synced accounts. Only the fact is kept — nothing about that
+   * account.
+   */
+  externalTransfer?: boolean;
 }
 
 export interface EraExtract {
@@ -46,6 +53,9 @@ const RULES: { re: RegExp; cls: (t: EraTxn, kind: AccountKind) => Class | null }
   { re: /^SHOPIFY$/, cls: (t, k) => (k !== 'CARD' && t.amount > 0 ? { kind: 'IN', to: 'SHOPIFY_PAYOUTS' } : null) },
   { re: /PAYPAL TRANSFER/, cls: (t) => (t.amount > 0 ? { kind: 'IN', to: 'PAYPAL' } : null) },
   { re: /REAL TIME TRANSFER RECD/, cls: (t) => (t.amount > 0 ? { kind: 'IN', to: 'OWNER_TRANSFERS' } : null) },
+  // deposits from a vendor we also pay (QuickBooks payments, Zelle received)
+  // are income, not refunds of that vendor's spend line
+  { re: /INTUIT DEPOSIT|ZELLE TRANSFER FROM|ZELLE PAYMENT FROM/, cls: (t) => (t.amount > 0 ? { kind: 'IN', to: 'OTHER_IN' } : null) },
   // spending
   { re: /PEACHY PRINT|ALIPAY|OUTGOING WIRE/, cls: () => ({ kind: 'OUT', to: 'PRODUCTION' }) },
   { re: /QWIK PACK|\bUPS\b|USPS|FEDEX|DHL|DELBROS/, cls: () => ({ kind: 'OUT', to: 'SHIPPING' }) },
@@ -59,6 +69,9 @@ const RULES: { re: RegExp; cls: (t: EraTxn, kind: AccountKind) => Class | null }
 ];
 
 export function classify(t: EraTxn, kind: AccountKind): Class {
+  // A transfer whose other side is not a synced account is not internal,
+  // whatever its description says.
+  if (t.externalTransfer) return t.amount > 0 ? { kind: 'IN', to: 'OWNER_TRANSFERS' } : { kind: 'OUT', to: 'OTHER' };
   const d = t.description.toUpperCase();
   for (const r of RULES) {
     if (r.re.test(d)) {
