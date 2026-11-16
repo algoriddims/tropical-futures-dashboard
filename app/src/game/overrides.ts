@@ -2,8 +2,11 @@
 // Who owns each part of ParkData:
 //
 //   MANUAL (terminal)  bankBalance, costs, growthTargetPct, wholesalePct,
-//                      nextDrop, annualBudget, monthlySalesGoal — entered by hand, persisted to
-//                      localStorage, re-applied over every import.
+//                      nextDrop, annualBudget, monthlySalesGoal, depositTags,
+//                      vendorMarks, incomingStock, leadTimeWeeks — entered by
+//                      hand, saved on the server (browser storage is a cache),
+//                      re-applied over every import. The last four come only
+//                      from the manual store: an import can't set them.
 //   SYNC (import)      everything else — products, pipeline, channels, orders,
 //                      campaigns, days, quests, rates, meta. Replaced whole by
 //                      each valid import.
@@ -14,12 +17,13 @@
 //                      value moved, the edit is flagged as a conflict for the
 //                      user to resolve.
 
-import type { CostItem, ParkData } from './types';
+import type { CostItem, DepositTag, ParkData, VendorMark } from './types';
+import type { IncomingStock } from '../analytics/types';
 import { syncedCash } from './engine';
 import { validateParkData } from './validate';
 
 export const FIELD_OWNERSHIP = {
-  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal'],
+  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal', 'depositTags', 'vendorMarks', 'incomingStock', 'leadTimeWeeks'],
   syncWithOverride: ['channels[].stock[].allocated', 'channels[].stock[].sold'],
 } as const;
 
@@ -45,6 +49,13 @@ export interface ManualSlices {
   nextDrop: { name: string; date: string } | null;
   annualBudget: number;
   monthlySalesGoal: number;
+  /** What each non-payout bank deposit is, keyed by deposit id. */
+  depositTags: Record<string, DepositTag>;
+  /** Keep/cut decision per recurring vendor. */
+  vendorMarks: Record<string, VendorMark>;
+  /** Stock on the way and the reorder lead time (weeks; null = not set). */
+  incomingStock: IncomingStock[];
+  leadTimeWeeks: number | null;
   shelfEdits: ShelfEdit[];
 }
 
@@ -72,6 +83,11 @@ export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData 
     nextDrop: m.nextDrop !== undefined ? m.nextDrop : base.nextDrop ?? null,
     annualBudget: m.annualBudget ?? base.annualBudget ?? 0,
     monthlySalesGoal: m.monthlySalesGoal ?? base.monthlySalesGoal ?? 0,
+    // owner decisions about synced records: never taken from an import
+    depositTags: m.depositTags ?? {},
+    vendorMarks: m.vendorMarks ?? {},
+    incomingStock: m.incomingStock ?? [],
+    leadTimeWeeks: m.leadTimeWeeks ?? null,
   };
 }
 
@@ -90,6 +106,10 @@ export function extractManual(d: ParkData): Partial<Omit<ManualSlices, 'shelfEdi
     nextDrop: d.nextDrop,
     annualBudget: d.annualBudget,
     monthlySalesGoal: d.monthlySalesGoal ?? 0,
+    depositTags: d.depositTags ?? {},
+    vendorMarks: d.vendorMarks ?? {},
+    incomingStock: d.incomingStock ?? [],
+    leadTimeWeeks: d.leadTimeWeeks ?? null,
   };
 }
 

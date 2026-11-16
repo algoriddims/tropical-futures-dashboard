@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAnalytics } from './analytics/useAnalytics';
 import { ProductTable, SizeMatrix } from './analytics/Products';
+import { StockPlanPanel } from './analytics/StockPlanPanel';
 import { ChannelFilterControl } from './analytics/Performance';
 import { formatRange } from '@/analytics/period';
 import { useTerminal } from '@/terminal/useTerminal';
@@ -37,6 +38,7 @@ export default function InventoryDesk() {
   const v = an.view;
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
+      <StockPlanPanel v={v} />
       <section className="window" aria-labelledby="inv-h">
         <div className="window-head flex-wrap">
           <h2 id="inv-h" className="wh-title">PRODUCTS & SIZES</h2>

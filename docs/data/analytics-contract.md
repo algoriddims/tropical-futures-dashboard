@@ -53,3 +53,7 @@ Joins use variant and product ids only. Titles and SKUs are labels: 50 of 136 va
 | Lead times, safety stock, restock policy for real products | Low-cover alerts are heuristic, and there are no reorder recommendations. |
 | Identity coverage | Returning share is partial. |
 | One day (20 Nov 2025) of variant rows not matching channel totals | Probably a custom line item. Totals use channel figures, and this is noted. |
+
+## Owner inputs to the stock checks
+
+Two things Shopify doesn't hold are typed in on the inventory page and saved with the manual entries, never in the snapshot: the reorder **lead time** (weeks, one value for all products) and **stock on the way** (`IncomingStock`: product, optional variant, units, expected date). `stockRisk` counts an entry from its expected date. It does not count an entry dated on or before the inventory read (it may already be in the count) or one with no size on a multi-size product; both are shown as not counted. Shopify's own `incoming` quantity has no date and is shown for reference only.

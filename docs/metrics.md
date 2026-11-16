@@ -94,6 +94,28 @@ Comparisons: absolute change for money and units; percentage-point change for pe
 - **Exclusions:** Zero velocity → "No recent sales", never infinity. Out of stock → "Out of stock".
 - **Limitations:** Observed sales, not unconstrained demand. Flags: short history (published within the window) and stock-outs that cap sales. No lead times or safety stock are supplied, so low-cover alerts use a heuristic threshold (4 weeks).
 
+## Sales at risk, next 4 weeks (estimate)
+
+- **Formula:** units of demand the stock can't meet over the next 28 days × the variant's average net price in the cover window. Demand runs day by day at the 28-day pace; stock on the way is added on its expected date.
+- **Requires:** Inventory snapshot, variant-day sales for the 28-day window, and (optional) stock-on-the-way entries typed in by the owner.
+- **Eligible records:** Tracked, non-bundle variants with net sales in the window. Ranks the "look into" list: most at risk first.
+- **Time basis:** Projects from the day of the inventory read (business timezone) over the following 28 days.
+- **Refunds:** Pace and price are net of returns in the window.
+- **Currency:** Shop reporting currency (USD) from Shopify, in integer cents. Never summed across currencies without a dated rate.
+- **Exclusions:** Stock on the way dated on or before the inventory read (it may already be in the count), and entries with no size on a multi-size product, are not counted — and are listed as such.
+- **Limitations:** Assumes the recent pace continues, which overstates a launch spike and understates a product held back by stock-outs. Average net price, not list price. An estimate for ranking, not a forecast.
+
+## Reorder-by date
+
+- **Formula:** run-out day − lead time, where run-out day = inventory-read day + ⌊sellable ÷ daily pace⌋ + 1. If that date has passed: "order now", with the days without stock = landing day − run-out day.
+- **Requires:** The owner's lead time in weeks (typed in on the inventory page). Without it no date is shown.
+- **Eligible records:** Variants raised in the "look into" list that have no dated stock on the way.
+- **Time basis:** Calendar days from the inventory read, business timezone.
+- **Refunds:** —
+- **Currency:** —
+- **Exclusions:** Not shown when dated stock is on the way; the gap before it arrives is shown instead.
+- **Limitations:** One lead time for every product. No safety stock or minimum order. Uses observed pace, as weeks of cover does.
+
 ## Returning-customer share (DTC)
 
 - **Formula:** Online Store customers ordering in the period who ordered before it began ÷ Online Store customers ordering in the period.

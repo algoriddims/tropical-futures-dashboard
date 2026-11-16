@@ -62,6 +62,20 @@ const analytics = {
   notes: [],
 };
 
+// A small bank layer dated relative to today: three complete months and the
+// current one, one untagged deposit this month, one recurring vendor.
+const ym = (d) => d.slice(0, 7);
+const monthsBack = (n) => { const [y, mo] = ym(nyToday).split('-').map(Number); const t = new Date(Date.UTC(y, mo - 1 - n, 1)); return t.toISOString().slice(0, 7); };
+const bank = {
+  accounts: [{ id: 'chk', name: 'SMOKE CHECKING', mask: '0001', kind: 'CHECKING', balance: 1000, asOf: new Date().toISOString() }],
+  cashflow: [
+    ...[3, 2, 1].map((n) => ({ month: monthsBack(n), partial: false, cashIn: { SHOPIFY_PAYOUTS: 300 }, spend: { SOFTWARE: 40 } })),
+    { month: ym(nyToday), partial: true, cashIn: { SHOPIFY_PAYOUTS: 200, OTHER_IN: 500 }, spend: { SOFTWARE: 40, SHIPPING: 60 } },
+  ],
+  deposits: [{ id: 'dep-1', date: `${ym(nyToday)}-01`, amount: 500, kind: 'OTHER_IN', label: 'Smoke invoice payment' }],
+  vendorSpend: [{ vendor: 'SMOKE SUITE', kind: 'SOFTWARE', byMonth: Object.fromEntries([3, 2, 1, 0].map((n) => [monthsBack(n), 40])) }],
+};
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
@@ -196,6 +210,40 @@ const analytics = {
   await page.waitForTimeout(150);
   t = await body();
   check('size matrix shows OUT and counts as text', /SMOKE TEE\s+OUT ★\s+3/.test(t));
+
+  // bank layer: all-channel money in vs out, deposit tagging, recurring charges, stock on the way
+  await page.click('button[title="IMPORT SYNC DATA"]');
+  await page.fill('textarea', JSON.stringify({ ...snapshot(5), analytics, ...bank }));
+  await page.click('button:text-is("IMPORT")');
+  await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
+  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  const moneyPanel = async () => (await page.locator('section[aria-labelledby="mio-h"]').innerText()).toUpperCase();
+  t = await moneyPanel();
+  check('money in counts payouts and leaves an untagged deposit out', t.includes('MONEY IN VS OUT') && /RECEIVED SO FAR\s+AT LEAST\s+\$200/.test(t) && t.includes('$500 IN 1 DEPOSIT NOT TAGGED YET'));
+  await page.click('button:has-text("TAG THEM")'); await page.waitForTimeout(200);
+  await page.click('section[aria-labelledby="dep-h"] button:text-is("CLIENT")'); await page.waitForTimeout(150);
+  t = (await page.locator('section[aria-labelledby="rec-h"]').innerText()).toUpperCase();
+  check('recurring charge listed with its monthly total', t.includes('SMOKE SUITE') && t.includes('$40.00') && t.includes('$40/MO'));
+  await page.click('section[aria-labelledby="rec-h"] button:text-is("CUT")'); await page.waitForTimeout(150);
+  check('marking a charge to cut shows in the total', (await page.locator('section[aria-labelledby="rec-h"]').innerText()).toUpperCase().includes('$40/MO MARKED TO CUT'));
+  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  t = await moneyPanel();
+  check('a tagged deposit counts toward money received', /RECEIVED SO FAR\s+\$700/.test(t) && !t.includes('NOT TAGGED YET') && t.includes('+$600'));
+  t = await body();
+  check('exceptions show the sales at risk', t.includes('OF SALES AT RISK IN THE NEXT 4 WEEKS') && t.includes('S: OUT OF STOCK NOW'));
+  await page.keyboard.press('i'); await page.waitForTimeout(200);
+  const plan = page.locator('section[aria-labelledby="sp-h"]');
+  await plan.locator('select').first().selectOption({ label: 'SMOKE TEE' });
+  await plan.locator('select').nth(1).selectOption({ label: 'S' });
+  await plan.locator('input[type="number"]').fill('12');
+  await plan.locator('input[type="date"]').fill(shift(nyToday, 5));
+  await plan.locator('button:text-is("ADD")').click(); await page.waitForTimeout(150);
+  check('stock on the way is recorded and counted', (await plan.innerText()).toUpperCase().includes('12 UNITS') && (await plan.innerText()).toUpperCase().includes('COUNTED IN THE STOCK CHECKS'));
+  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  check('the exception names the stock on the way', (await body()).includes('S: 12 UNITS EXPECTED'));
+  await page.reload(); await page.waitForSelector('text=MONEY IN VS OUT');
+  t = await moneyPanel();
+  check('tags and stock on the way survive a reload', /RECEIVED SO FAR\s+\$700/.test(t) && (await body()).includes('S: 12 UNITS EXPECTED'));
 
   check('no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();

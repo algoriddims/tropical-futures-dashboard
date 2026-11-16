@@ -2,7 +2,7 @@
 // Pure functions over the normalized AnalyticsSnapshot. Definitions live in
 // dictionary.ts (and docs/metrics.md); the UI only formats what these return.
 
-import type { AnalyticsSnapshot, DailyChannelRow, MetricResult, VariantDailyRow, VariantRecord } from './types';
+import type { AnalyticsSnapshot, DailyChannelRow, IncomingStock, MetricResult, StockPlan, VariantDailyRow, VariantRecord } from './types';
 import { unavailable } from './types';
 import type { Money } from './money';
 import { formatMoney } from './money';
@@ -405,6 +405,113 @@ export function channelBreakdown(s: AnalyticsSnapshot, range: DayRange, map: Rec
   }).sort((a, b) => b.totals.netSales - a.totals.netSales);
 }
 
+// ── Stock risk: sales at risk, reorder-by, stock on the way ────────────────
+
+export const NO_PLAN: StockPlan = { leadTimeWeeks: null, incoming: [] };
+
+export interface StockRisk {
+  horizonDays: number;
+  /** Net units per day at the pace of the cover window. */
+  dailyPace: number;
+  /** Units of demand, at that pace, that stock plus dated arrivals can't meet within the horizon. */
+  lostUnits: number;
+  /** lostUnits × the variant's average net price in the cover window (minor units). An estimate. */
+  atRisk: number;
+  /** Sellable units at the stock read. */
+  sellable: number;
+  /** First day stock can't meet a day's demand, counting only stock in hand. */
+  runsOutOn: Ymd;
+  /** Days inside the horizon without enough stock, after dated arrivals. */
+  gapDays: number;
+  /** Future-dated arrivals that were counted. */
+  arrivals: IncomingStock[];
+  /** Entries whose expected date is not after the stock read: not counted (they may already be in the count). */
+  overdue: IncomingStock[];
+  /** Entries for the product with no size given, on a product with several variants: not counted. */
+  unallocated: IncomingStock[];
+  /** Last day to order so new stock lands before runsOutOn; null when no lead time is set. */
+  reorderBy: Ymd | null;
+  /** When an order placed on the stock-read day would land; null when no lead time is set. */
+  landsIfOrderedNow: Ymd | null;
+  asOf: Ymd;
+}
+
+/**
+ * What the recent pace implies for the next `horizonDays`: how much demand
+ * goes unmet, what that is worth, and when to reorder. Returns null when the
+ * variant has no recent sales, isn't tracked, or is a bundle — there is no
+ * pace to project. Day-by-day, so an arrival part-way through shortens the
+ * gap instead of cancelling it.
+ */
+export function stockRisk(s: AnalyticsSnapshot, v: VariantRecord, plan: StockPlan = NO_PLAN, variantsInProduct = 1, horizonDays = 28, windowDays = 28): StockRisk | null {
+  const w = coverWindow(s, windowDays);
+  if (!w || !s.timezone || !v.tracked || v.isBundle) return null;
+  const rows = s.variantDaily.filter((r) => r.variantId === v.variantId && inRange(r.date, w));
+  const units = rows.reduce((n, r) => n + r.netItems, 0);
+  if (units <= 0) return null;
+  const pace = units / windowDays;
+  const net = rows.reduce((n, r) => n + r.netSales, 0);
+  const unitNet = net > 0 ? net / units : v.price;
+  const asOf = todayIn(s.timezone, new Date(s.inventoryAsOf));
+  const mine = plan.incoming.filter((e) => e.productId === v.productId && e.units > 0);
+  const forVariant = mine.filter((e) => e.variantId === v.variantId || (e.variantId === null && variantsInProduct === 1));
+  const unallocated = mine.filter((e) => e.variantId === null && variantsInProduct > 1);
+  const overdue = forVariant.filter((e) => e.expectedDate <= asOf);
+  const arrivals = forVariant.filter((e) => e.expectedDate > asOf).sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
+
+  const sellable = stockPosition(v).sellable;
+  let stock = sellable;
+  let lost = 0;
+  let gapDays = 0;
+  for (let i = 1; i <= horizonDays; i++) {
+    const day = addDays(asOf, i);
+    for (const a of arrivals) if (a.expectedDate === day) stock += a.units;
+    const sold = Math.min(stock, pace);
+    if (sold < pace) { lost += pace - sold; gapDays += 1; }
+    stock -= sold;
+  }
+  const lostUnits = Math.round(lost * 100) / 100;
+  const runsOutOn = addDays(asOf, Math.floor(sellable / pace + 1e-9) + 1);
+  const leadDays = plan.leadTimeWeeks && plan.leadTimeWeeks > 0 ? Math.round(plan.leadTimeWeeks * 7) : null;
+  return {
+    horizonDays, dailyPace: pace, lostUnits, atRisk: Math.round(lostUnits * unitNet),
+    sellable, runsOutOn, gapDays, arrivals, overdue, unallocated,
+    reorderBy: leadDays === null ? null : addDays(runsOutOn, -leadDays),
+    landsIfOrderedNow: leadDays === null ? null : addDays(asOf, leadDays),
+    asOf,
+  };
+}
+
+const shortDay = (d: Ymd) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const daysBetween = (a: Ymd, b: Ymd) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/** Plain-language next steps for one variant's stock risk (reorder timing and stock on the way). */
+export function reorderAdvice(label: string, r: StockRisk, plan: StockPlan): string[] {
+  const out: string[] = [];
+  const u = (n: number) => `${n} unit${n === 1 ? '' : 's'}`;
+  for (const a of r.arrivals) out.push(`${label}: ${u(a.units)} expected ${shortDay(a.expectedDate)}${a.note ? ` (${a.note})` : ''}`);
+  if (r.arrivals.length) {
+    out.push(r.gapDays ? `${label}: about ${r.gapDays} day${r.gapDays === 1 ? '' : 's'} short of stock in the next ${r.horizonDays} days even with what's on the way` : `${label}: what's on the way arrives before stock runs out`);
+  } else if (r.sellable <= 0) {
+    out.push(r.landsIfOrderedNow
+      ? `${label}: out of stock now — an order placed today lands around ${shortDay(r.landsIfOrderedNow)} (${plan.leadTimeWeeks}-week lead time)`
+      : `${label}: out of stock now — set a lead time on the inventory page to see when a new order would land`);
+  } else if (r.reorderBy && r.landsIfOrderedNow) {
+    const wk = `${plan.leadTimeWeeks}-week lead time`;
+    if (r.reorderBy <= r.asOf) {
+      const gap = Math.max(0, daysBetween(r.runsOutOn, r.landsIfOrderedNow));
+      out.push(`${label}: order now — stock runs out around ${shortDay(r.runsOutOn)} and an order placed today lands around ${shortDay(r.landsIfOrderedNow)} (${wk}), about ${gap} day${gap === 1 ? '' : 's'} without stock`);
+    } else {
+      out.push(`${label}: reorder by ${shortDay(r.reorderBy)} to land before stock runs out around ${shortDay(r.runsOutOn)} (${wk})`);
+    }
+  } else {
+    out.push(`${label}: stock runs out around ${shortDay(r.runsOutOn)} at this pace — set a lead time on the inventory page for a reorder-by date`);
+  }
+  for (const a of r.overdue) out.push(`${label}: ${u(a.units)} were expected ${shortDay(a.expectedDate)} — not counted; if they arrived, remove the entry`);
+  for (const a of r.unallocated) out.push(`${u(a.units)} expected ${shortDay(a.expectedDate)} with no size given — not counted for ${label}`);
+  return out;
+}
+
 // ── Exceptions ─────────────────────────────────────────────────────────────
 
 export interface Exception {
@@ -416,6 +523,10 @@ export interface Exception {
   rule: string;                 // the triggering rule, verbatim
   drill: { desk: string; label: string };
   evidence: 'sufficient' | 'insufficient';
+  /** Estimated net sales lost in the next 28 days at the recent pace (minor units); 0 when not a stock exception. */
+  atRisk: number;
+  /** Reorder timing and stock on the way, plain text. */
+  actions: string[];
 }
 
 export interface ExceptionConfig {
@@ -425,35 +536,44 @@ export interface ExceptionConfig {
 
 export const DEFAULT_EXCEPTION_CONFIG: ExceptionConfig = { lowCoverWeeks: 4, minUnitsForCover: 2 };
 
-export function buildExceptions(s: AnalyticsSnapshot, cmp: Comparison, products: ProductPerf[], cfg: ExceptionConfig = DEFAULT_EXCEPTION_CONFIG, map: Record<string, ChannelGroup> = CHANNEL_MAP): Exception[] {
+export function buildExceptions(s: AnalyticsSnapshot, cmp: Comparison, products: ProductPerf[], cfg: ExceptionConfig = DEFAULT_EXCEPTION_CONFIG, map: Record<string, ChannelGroup> = CHANNEL_MAP, plan: StockPlan = NO_PLAN): Exception[] {
   const out: Exception[] = [];
+  const name = (v: VariantPerf) => v.size ?? v.color ?? v.variant.variantTitle;
+  const risks = (p: ProductPerf, vs: VariantPerf[]) => vs.map((v) => ({ v, r: stockRisk(s, v.variant, plan, p.variants.length) }));
+  const uniq = (xs: string[]) => [...new Set(xs)];
   // 1. selling sizes that are unavailable
   for (const p of products) {
     const outSelling = p.variants.filter((v) => v.cover.cover.kind === 'out-of-stock' && v.cover.unitsInWindow > 0);
     if (outSelling.length) {
+      const rs = risks(p, outSelling);
       out.push({
         id: `oos-${p.productId}`, severity: 1,
-        title: `${p.title}: ${outSelling.map((v) => v.size ?? v.color ?? v.variant.variantTitle).join(', ')} unavailable`,
+        title: `${p.title}: ${outSelling.map(name).join(', ')} unavailable`,
         affected: p.title,
         numbers: outSelling.map((v) => `${v.size ?? v.variant.variantTitle}: ${v.cover.unitsInWindow} sold in the last 28 days, ${v.stock.available} available${v.stock.oversold ? ` (oversold by ${v.stock.oversold})` : ''}`),
         rule: 'A variant sold in the last 28 complete days and now has no sellable stock.',
         drill: { desk: 'i', label: 'Open inventory' },
         evidence: 'sufficient',
+        atRisk: rs.reduce((n, x) => n + (x.r?.atRisk ?? 0), 0),
+        actions: uniq(rs.flatMap((x) => (x.r ? reorderAdvice(name(x.v), x.r, plan) : []))),
       });
     }
   }
-  // 2. low cover (heuristic)
+  // 2. low cover (heuristic) — dropped when stock on the way closes the gap
   for (const p of products) {
-    const low = p.variants.filter((v) => v.cover.cover.kind === 'weeks' && v.cover.cover.weeks < cfg.lowCoverWeeks && v.cover.unitsInWindow >= cfg.minUnitsForCover);
+    const low = risks(p, p.variants.filter((v) => v.cover.cover.kind === 'weeks' && v.cover.cover.weeks < cfg.lowCoverWeeks && v.cover.unitsInWindow >= cfg.minUnitsForCover))
+      .filter((x) => !x.r || x.r.lostUnits > 0);
     if (low.length) {
       out.push({
         id: `low-${p.productId}`, severity: 2,
-        title: `${p.title}: under ${cfg.lowCoverWeeks} weeks of stock in ${low.map((v) => v.size ?? v.variant.variantTitle).join(', ')}`,
+        title: `${p.title}: under ${cfg.lowCoverWeeks} weeks of stock in ${low.map((x) => x.v.size ?? x.v.variant.variantTitle).join(', ')}`,
         affected: p.title,
-        numbers: low.map((v) => `${v.size ?? v.variant.variantTitle}: ${v.stock.sellable} available, ${v.cover.unitsInWindow} sold in 28 days ≈ ${(v.cover.cover as { weeks: number }).weeks.toFixed(1)} weeks (estimate)`),
-        rule: `Weeks of cover < ${cfg.lowCoverWeeks} (a heuristic — no lead times or safety stock are configured) with ≥ ${cfg.minUnitsForCover} units sold in 28 days.`,
+        numbers: low.map(({ v }) => `${v.size ?? v.variant.variantTitle}: ${v.stock.sellable} available, ${v.cover.unitsInWindow} sold in 28 days ≈ ${(v.cover.cover as { weeks: number }).weeks.toFixed(1)} weeks (estimate)`),
+        rule: `Weeks of cover < ${cfg.lowCoverWeeks} (a heuristic) with ≥ ${cfg.minUnitsForCover} units sold in 28 days, and stock on the way doesn't close the gap.`,
         drill: { desk: 'i', label: 'Open inventory' },
         evidence: 'sufficient',
+        atRisk: low.reduce((n, x) => n + (x.r?.atRisk ?? 0), 0),
+        actions: uniq(low.flatMap((x) => (x.r ? reorderAdvice(name(x.v), x.r, plan) : []))),
       });
     }
   }
@@ -468,7 +588,13 @@ export function buildExceptions(s: AnalyticsSnapshot, cmp: Comparison, products:
       rule: 'Sales in the period came through a channel with no DTC/wholesale mapping. They are in "All channels" totals but not in either group.',
       drill: { desk: 'l', label: 'Open channels' },
       evidence: 'sufficient',
+      atRisk: 0, actions: [],
     });
   }
-  return out.sort((a, b) => a.severity - b.severity);
+  return rankExceptions(out);
+}
+
+/** Most money at stake first; ties (and exceptions with no money estimate) by severity. */
+export function rankExceptions(list: Exception[]): Exception[] {
+  return [...list].sort((a, b) => b.atRisk - a.atRisk || a.severity - b.severity);
 }

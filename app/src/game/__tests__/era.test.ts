@@ -53,6 +53,58 @@ describe('ERA classification', () => {
     expect(classify(tx('d', 'card', -40, 'Shopify'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
   });
 
+  it('deposits from vendors we also pay are income, not refunds of that spend line', () => {
+    expect(classify(tx('d', 'chk', 2200, 'Intuit Deposit'), 'CHECKING')).toEqual({ kind: 'IN', to: 'OTHER_IN' });
+    expect(classify(tx('d', 'card', -38, 'Intuit QuickBooks'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
+    expect(classify(tx('d', 'chk', 188, 'Zelle Transfer from Some Studio Inc.'), 'CHECKING')).toEqual({ kind: 'IN', to: 'OTHER_IN' });
+    expect(classify(tx('d', 'chk', -50, 'Zelle Transfer to A Person'), 'CHECKING')).toEqual({ kind: 'OUT', to: 'ZELLE' });
+    // a genuine refund still reduces its spend line
+    expect(classify(tx('d', 'card', 15, 'Cursor'), 'CARD')).toEqual({ kind: 'OUT', to: 'SOFTWARE' });
+  });
+
+  it('a transfer from an account outside the synced list is money from the owner, not an internal move', () => {
+    const ext = { ...tx('d', 'chk', 500, 'Online Transfer from Checking 0000', true), externalTransfer: true };
+    expect(classify(ext, 'CHECKING')).toEqual({ kind: 'IN', to: 'OWNER_TRANSFERS' });
+    expect(classify(tx('d', 'chk', 10, 'Online Transfer from Savings 2222', true), 'CHECKING').kind).toBe('INTERNAL');
+    const x = extract();
+    x.transactions.push({ ...tx('2026-09-20', 'chk', 500, 'Online Transfer from Checking 0000', true), externalTransfer: true });
+    const sep = buildEraLayer(x).cashflow.find((m) => m.month === '2026-09')!;
+    expect(sep.cashIn.OWNER_TRANSFERS).toBe(500);
+  });
+
+  it('lists each owner/other deposit, and the list adds up to the cash-flow lines', () => {
+    const x = extract();
+    x.transactions.push({ ...tx('2026-08-07', 'chk', 2200, 'Intuit Deposit'), id: 'bank-77' }, tx('2026-08-09', 'chk', 50, 'Mystery Credit'), tx('2026-08-09', 'chk', 50, 'Mystery Credit'));
+    const layer = buildEraLayer(x);
+    const aug = layer.deposits.filter((d) => d.date.startsWith('2026-08'));
+    expect(aug.map((d) => [d.kind, d.amount, d.memo])).toEqual([['OWNER_TRANSFERS', 400, 'shop x sales'], ['OTHER_IN', 2200, undefined], ['OTHER_IN', 50, undefined], ['OTHER_IN', 50, undefined]]);
+    expect(aug[1].id).toBe('bank-77');                       // the bank feed's id when there is one
+    expect(new Set(layer.deposits.map((d) => d.id)).size).toBe(layer.deposits.length); // exact repeats still get distinct ids
+    const cm = layer.cashflow.find((m) => m.month === '2026-08')!;
+    expect(cm.cashIn.OWNER_TRANSFERS).toBe(400);
+    expect(cm.cashIn.OTHER_IN).toBe(2300);
+    // payouts are not deposits to tag
+    expect(layer.deposits.some((d) => d.label === 'Shopify')).toBe(false);
+    // and the whole snapshot passes import validation, which re-checks the sums
+    expect(validateParkData(withEra(fixtureData, x)).ok).toBe(true);
+  });
+
+  it('rejects a snapshot whose deposit list does not match its cash-flow lines', () => {
+    const snap = withEra(fixtureData, extract());
+    const broken = { ...snap, deposits: [...snap.deposits!, { id: 'extra', date: '2026-08-11', amount: 999, kind: 'OTHER_IN' as const, label: 'Not in the month' }] };
+    const v = validateParkData(broken);
+    expect(v.ok).toBe(false);
+    expect(v.ok ? '' : v.errors.join(' ')).toContain('deposits: 2026-08 OTHER_IN');
+  });
+
+  it('keeps software and uncategorised spending by vendor and month, net of refunds', () => {
+    const spend = buildEraLayer(extract()).vendorSpend;
+    expect(spend).toEqual([
+      { vendor: 'Cursor', kind: 'SOFTWARE', byMonth: { '2026-09': 45 } },      // $60 charge, $15 refund
+      { vendor: 'Mystery Vendor', kind: 'OTHER', byMonth: { '2026-09': 40 } },
+    ]);
+  });
+
   it('UPS matches as a word, not inside other words', () => {
     expect(classify(tx('d', 'chk', -7, 'Certificate of Origin Ups-delbros Inte'), 'CHECKING')).toEqual({ kind: 'OUT', to: 'SHIPPING' });
     expect(classify(tx('d', 'card', -7, 'Meetup Groups'), 'CARD')).toEqual({ kind: 'OUT', to: 'OTHER' });
