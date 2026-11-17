@@ -18,6 +18,12 @@ Status, 17 Nov 2026. Production runs are the owner's records, typed in on the pr
 - **Total cost** = the known lines; lines without an amount are counted and shown as "+ ?". **Cost per unit, all in** = total known cost (samples and freight included) ÷ goods units; partial while any line is unknown.
 - **Still to pay** = unpaid lines with an amount.
 
+## Run timeline
+
+The top of the production desk draws every run on one calendar (`timelineModel` in `production.ts`, drawn by `RunTimeline.tsx`): sampling (samples ordered → approved), bulk (ordered → finished) and transit (shipped → received, or to the shipment ETA) as bars. Solid = happened (up to today for a phase under way); hatched = planned or estimated; a dashed "?" = the end isn't known. Payments are markers under the bars — ✓ paid where it was paid (or on the invoice date), ! due on its due date, or at today when no date is set (as the cash forecast counts it); close markers stack on a second line. A today line, and Chinese New Year when it falls in the window (the closure band, about 10 days before to 2 weeks after, is approximate). Clicking a run opens its card; a "show as table" view lists the same phases and payments. Run cards are folded to their money summary until EDIT.
+
+Phase colours are the first three slots of the validated categorical set (light steps on Paper, dark steps on Dark/Terminal), checked for colour-blind separation; segments are also labelled and hatched, so colour isn't the only cue.
+
 ## Where runs show up
 
 - **Cash forecast (costs desk):** each unpaid, priced line goes out in its due month; an undated or overdue one goes out this month (conservative). Paid lines are already in the bank figures and aren't counted again.

@@ -30,6 +30,9 @@
 
 /* ── CRT / VHS theme tokens ─────────────────────────────── */
 :root {
+  /* production timeline phases (validated categorical set, dark steps) and status */
+  --phase-1: #3987e5; --phase-2: #d95926; --phase-3: #199e70; --on-phase: #ffffff;
+  --good: #0ca30c; --critical: #e66767; --timeline-band: rgba(255,255,255,0.06);
   --crt-black: #0a0a0c;
   --crt-dark: #111114;
   --crt-mid: #1a1a1e;
@@ -329,6 +332,8 @@ canvas.pixelated { image-rendering: pixelated; }
    T cycles PAPER → DARK → TERMINAL. */
 :root[data-look='paper'] {
   color-scheme: light;
+  --phase-1: #2a78d6; --phase-2: #eb6834; --phase-3: #1baf7a; --on-phase: #ffffff;
+  --good: #0ca30c; --critical: #d03b3b; --timeline-band: #f0efec;
   --crt-black: #ffffff;          /* page */
   --crt-dark: #ffffff;           /* blocks */
   --crt-mid: #e6e6e6;            /* hairlines */

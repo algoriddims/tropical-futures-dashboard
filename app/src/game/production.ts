@@ -356,3 +356,124 @@ export function productionAlerts(runs: ProductionRun[], today: Ymd, soonDays = 7
   }
   return out;
 }
+
+// ── Timeline (all runs on one calendar) ──
+
+export type PhaseKey = 'SAMPLING' | 'BULK' | 'TRANSIT';
+export const PHASES: { key: PhaseKey; label: string; from: StageKey; to: StageKey }[] = [
+  { key: 'SAMPLING', label: 'Sampling', from: 'SAMPLES_ORDERED', to: 'SAMPLES_APPROVED' },
+  { key: 'BULK', label: 'Bulk', from: 'BULK_ORDERED', to: 'BULK_FINISHED' },
+  { key: 'TRANSIT', label: 'Transit', from: 'SHIPPED', to: 'RECEIVED' },
+];
+
+export interface TimelinePhase {
+  key: PhaseKey;
+  label: string;
+  from: Ymd;
+  /** null = the end isn't known (e.g. no transit time set). */
+  to: Ymd | null;
+  /** The part up to this date happened (solid); the rest is planned or estimated (hatched). null = none of it happened yet. */
+  doneUntil: Ymd | null;
+  /** Whether the start date is itself a plan or estimate. */
+  startKind: DateKind;
+}
+
+export interface TimelinePayment {
+  /** null = no date set; drawn at today, as the cash forecast counts it. */
+  date: Ymd | null;
+  paid: boolean;
+  /** Known amounts summed in cents; null when none of the grouped lines has an amount. */
+  amount: number | null;
+  unknownLines: number;
+  lines: string[];
+}
+
+export interface TimelineRow {
+  runId: string;
+  name: string;
+  sub: string;
+  phases: TimelinePhase[];
+  payments: TimelinePayment[];
+  arrival: { date: Ymd | null; kind: DateKind | 'eta' | null };
+  received: boolean;
+}
+
+export interface Timeline {
+  from: Ymd;
+  to: Ymd;
+  today: Ymd;
+  rows: TimelineRow[];
+  /** Chinese New Year inside the window (factories close for weeks around it). */
+  holidays: { label: string; day: Ymd; from: Ymd; to: Ymd }[];
+}
+
+// Chinese New Year (lunar new year's day). Closure windows vary by factory;
+// the band is an approximation, labelled as such.
+const CNY: Ymd[] = ['2027-02-06', '2028-01-26', '2029-02-13', '2030-02-03'];
+
+const later = (a: Ymd | null, b: Ymd | null) => (!a ? b : !b ? a : a > b ? a : b);
+const earlier = (a: Ymd | null, b: Ymd | null) => (!a ? b : !b ? a : a < b ? a : b);
+
+/**
+ * Every run as a row of phases (sampling, bulk, transit) on one calendar.
+ * A phase whose start isn't known is left out; one whose end isn't known has
+ * to = null. The window runs from two weeks before the earliest date (or
+ * today) to two weeks after the latest, and at least 12 weeks past today.
+ */
+export function timelineModel(runs: ProductionRun[], today: Ymd): Timeline {
+  let lo: Ymd = addDays(today, -14);
+  let hi: Ymd = addDays(today, 84);
+  const rows: TimelineRow[] = runs.map((r) => {
+    const dates = stageDates(r);
+    const at = (k: StageKey) => dates.find((d) => d.key === k)!;
+    const phases: TimelinePhase[] = [];
+    for (const p of PHASES) {
+      const a = at(p.from);
+      const b = at(p.to);
+      // transit can start from a shipment's shipped date when the stage has none
+      const shipped = r.shipments.map((x) => x.shipped).filter((d): d is Ymd => !!d).sort()[0] ?? null;
+      const from = a.date ?? (p.key === 'TRANSIT' ? shipped : null);
+      if (!from) continue;
+      let to = b.date;
+      // transit ends at the shipment ETA when one is set
+      if (p.key === 'TRANSIT' && b.kind !== 'done') {
+        const eta = arrivalDate(r);
+        if (eta.kind === 'eta') to = eta.date;
+      }
+      if (!to && b.kind === 'done') to = from;   // marked done without dates: a stub, not an open end
+      const doneUntil = b.kind === 'done' ? (to ?? from)
+        : a.kind === 'done' ? (to && today > to ? to : today < from ? null : today)
+          : null;
+      phases.push({ key: p.key, label: p.label, from, to, doneUntil, startKind: a.date ? (a.kind ?? 'estimate') : 'done' });
+      lo = earlier(lo, from)!;
+      hi = later(hi, to ?? from)!;
+    }
+    // payments: grouped by date and paid/due
+    const groups = new Map<string, TimelinePayment>();
+    for (const c of r.costs) {
+      const date = c.date ?? (c.paid ? r.invoiceDate : null);
+      if (c.paid && !date) continue;      // paid, no date known: nothing to place
+      const key = `${date ?? 'none'}|${c.paid}`;
+      const g = groups.get(key) ?? { date, paid: c.paid, amount: null, unknownLines: 0, lines: [] };
+      const v = costCents(c);
+      if (v === null) g.unknownLines += 1; else g.amount = (g.amount ?? 0) + v;
+      g.lines.push(c.description || c.kind);
+      groups.set(key, g);
+      if (date) { lo = earlier(lo, date)!; hi = later(hi, date)!; }
+    }
+    const goods = r.costs.filter((c) => c.kind === 'GOODS').reduce((n, c) => n + (c.units ?? 0), 0);
+    const arrival = arrivalDate(r);
+    return {
+      runId: r.id, name: r.name,
+      sub: [goods ? `${goods} units` : '', r.incoterm, r.destination].filter(Boolean).join(' · '),
+      phases,
+      payments: [...groups.values()].sort((a, b) => (a.date ?? today).localeCompare(b.date ?? today)),
+      arrival, received: arrival.kind === 'done',
+    };
+  });
+  const from = addDays(lo, -7);
+  const to = addDays(hi, 21);
+  const holidays = CNY.filter((d) => d >= from && d <= to)
+    .map((day) => ({ label: 'Chinese New Year', day, from: addDays(day, -10), to: addDays(day, 14) }));
+  return { from, to, today, rows, holidays };
+}
