@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  arrivalDate, blankRun, costCents, currentStage, parseRun, productionAlerts, runCashDue, runIncoming, runTotals, stageDates, storedRuns,
+  arrivalDate, blankRun, costCents, timelineModel, currentStage, parseRun, productionAlerts, runCashDue, runIncoming, runTotals, stageDates, storedRuns,
 } from '../production';
 import type { ProductionRun, RunCost } from '../production';
 import { forecastCashflow } from '../engine';
@@ -133,5 +133,52 @@ describe('pasted and stored runs', () => {
     expect(storedRuns(undefined)).toEqual({ runs: [], dropped: 0 });
     // and an import can't bring runs in: they're the owner's records
     expect(applyManual({ ...fixtureData, productionRuns: [capRun()] }, {}).productionRuns).toEqual([]);
+  });
+});
+
+describe('run timeline', () => {
+  it('draws each phase from its dates: done part solid up to today, the rest estimated, an unknown end left open', () => {
+    const t = timelineModel([capRun()], '2026-11-20');
+    const row = t.rows[0];
+    expect(row.sub).toBe('300 units · DDP · Philippines');
+    expect(row.phases).toEqual([
+      { key: 'SAMPLING', label: 'Sampling', from: '2026-11-17', to: '2026-12-07', doneUntil: '2026-11-20', startKind: 'done' },
+      { key: 'BULK', label: 'Bulk', from: '2026-12-07', to: '2027-01-01', doneUntil: null, startKind: 'estimate' },
+      { key: 'TRANSIT', label: 'Transit', from: '2027-01-01', to: null, doneUntil: null, startKind: 'estimate' },
+    ]);
+    expect(row.received).toBe(false);
+  });
+
+  it('groups payments by date: paid ones where they were paid, unpaid ones on their due date, undated ones flagged', () => {
+    const p = timelineModel([capRun()], '2026-11-20').rows[0].payments;
+    expect(p.map((x) => [x.date, x.paid, x.amount, x.unknownLines])).toEqual([
+      ['2026-11-17', true, 40000, 0],         // samples paid
+      [null, false, 118400, 0],               // due, date not set → drawn at today, so it sorts there
+      ['2026-12-08', false, 41200, 0],
+    ]);
+    // the freight is paid with no date: nothing to place on the calendar
+    expect(p.some((x) => x.lines.includes('DDP sea freight'))).toBe(false);
+  });
+
+  it('ends transit at the shipment ETA, and a received run is solid to the end', () => {
+    const r = capRun();
+    r.shipments = [{ id: 's', mode: 'SEA', carrier: 'Line', tracking: 'X', url: null, shipped: '2027-01-02', eta: '2027-01-20', delivered: null }];
+    expect(timelineModel([r], '2026-11-20').rows[0].phases[2]).toMatchObject({ to: '2027-01-20', doneUntil: null });
+    r.stages.RECEIVED = { planned: null, done: '2027-01-22' };
+    const row = timelineModel([r], '2027-02-01').rows[0];
+    expect(row.received).toBe(true);
+    // stages in between were never dated: bulk has nothing to draw, transit starts when the shipment left
+    expect(row.phases.map((x) => [x.key, x.from, x.to, x.doneUntil])).toEqual([
+      ['SAMPLING', '2026-11-17', '2026-11-17', '2026-11-17'],
+      ['TRANSIT', '2027-01-02', '2027-01-22', '2027-01-22'],
+    ]);
+  });
+
+  it('frames the window around the runs and today, and marks Chinese New Year when it falls inside', () => {
+    const t = timelineModel([capRun()], '2026-11-20');
+    expect(t.from <= '2026-11-06').toBe(true);
+    expect(t.to >= '2027-02-12').toBe(true);        // at least 12 weeks past today
+    expect(t.holidays).toEqual([{ label: 'Chinese New Year', day: '2027-02-06', from: '2027-01-27', to: '2027-02-20' }]);
+    expect(timelineModel([], '2026-06-01').holidays).toEqual([]);
   });
 });

@@ -12,6 +12,7 @@ import type { CostKind, ProductionRun, RunCost, ShipMode, Shipment, StageKey } f
 import { todayIn } from '@/analytics/period';
 import { money } from '@/game/format';
 import { useAnalytics } from '../analytics/useAnalytics';
+import { RunTimeline } from './RunTimeline';
 
 const box = 'bg-[var(--crt-dark)] border border-[var(--crt-line)] px-1.5 py-0.5 text-[0.8rem] min-w-0 w-full';
 const btn = 'tap border border-[var(--crt-line)] px-2 py-0.5 font-display text-xs';
@@ -77,7 +78,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 // ── one run ──
 
-function RunCard({ run, onChange, onDelete, today }: { run: ProductionRun; onChange: (mut: (r: ProductionRun) => ProductionRun) => void; onDelete: () => void; today: string }) {
+function RunCard({ run, onChange, onDelete, today, open, onToggle }: { run: ProductionRun; onChange: (mut: (r: ProductionRun) => ProductionRun) => void; onDelete: () => void; today: string; open: boolean; onToggle: () => void }) {
   const an = useAnalytics();
   const [asText, setAsText] = useState(false);
   const [linkLabel, setLinkLabel] = useState('');
@@ -107,12 +108,13 @@ function RunCard({ run, onChange, onDelete, today }: { run: ProductionRun; onCha
       : 'ARRIVAL UNKNOWN';
 
   return (
-    <section className="window" aria-label={`Production run ${run.name}`}>
+    <section id={`run-${run.id}`} className="window scroll-mt-2" aria-label={`Production run ${run.name}`}>
       <div className="window-head flex-wrap gap-2">
         <h2 className="wh-title">{run.name}</h2>
         <span className="wh-note flex flex-wrap items-center gap-2">
           <span className={`badge ${cur ? 'tier-amber' : 'tier-green'}`}>{cur ? `NEXT: ${cur.label.toUpperCase()}` : 'RECEIVED'}</span>
           <span>{arrivalText}</span>
+          <button className={btn} onClick={onToggle} aria-expanded={open}>{open ? 'DONE EDITING' : 'EDIT'}</button>
         </span>
       </div>
       <div className="window-body space-y-4">
@@ -139,6 +141,7 @@ function RunCard({ run, onChange, onDelete, today }: { run: ProductionRun; onCha
           </div>
         </div>
 
+        {open && <>
         {/* who, where, terms */}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Fact label="Run name"><TextField label="Run name" value={run.name} onCommit={(v) => v && set('name', v)} /></Fact>
@@ -346,6 +349,7 @@ function RunCard({ run, onChange, onDelete, today }: { run: ProductionRun; onCha
             <textarea readOnly aria-label="Run as text" className={`${box} h-40 font-mono`} value={JSON.stringify(run, null, 2)} onFocus={(e) => e.currentTarget.select()} />
           </div>
         )}
+        </>}
       </div>
     </section>
   );
@@ -360,7 +364,13 @@ export function ProductionRuns() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasted, setPasted] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [openIds, setOpenIds] = useState<string[]>([]);
   if (!data) return null;
+  const toggle = (id: string) => setOpenIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const openRun = (id: string) => {
+    setOpenIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
+    requestAnimationFrame(() => document.getElementById(`run-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
   const runs = data.productionRuns ?? [];
   const today = todayIn(an.kind === 'ok' ? an.view.a.timezone ?? 'America/New_York' : 'America/New_York');
   const totals = runs.map(runTotals);
@@ -372,7 +382,9 @@ export function ProductionRuns() {
     e.preventDefault();
     const name = newName.trim();
     if (!name) return;
-    put((rs) => [blankRun(name), ...rs]);
+    const run = blankRun(name);
+    put((rs) => [run, ...rs]);
+    setOpenIds((ids) => [...ids, run.id]);   // a new run opens for editing
     setNewName('');
   };
   const addPasted = () => {
@@ -393,8 +405,9 @@ export function ProductionRuns() {
           </span>
         </div>
         <div className="window-body space-y-2">
+          <RunTimeline runs={runs} today={today} onOpen={openRun} />
           <p className="stat-sub">
-            ONE CARD PER SUPPLIER ORDER: STAGES, COSTS AND PAYMENTS, SHIPMENTS AND FILES. UNPAID COSTS GO INTO THE CASH FORECAST, GOODS LINKED TO A SHOPIFY PRODUCT COUNT AS STOCK ON THE WAY, AND LATE STAGES OR PAYMENTS COMING DUE SHOW IN "THIS WEEK: LOOK INTO". SAVED WITH YOUR OTHER ENTRIES; A SYNC NEVER CHANGES THEM.
+            CLICK A RUN TO OPEN IT. EACH CARD HOLDS STAGES, COSTS AND PAYMENTS, SHIPMENTS AND FILES (PRESS EDIT). UNPAID COSTS GO INTO THE CASH FORECAST, GOODS LINKED TO A SHOPIFY PRODUCT COUNT AS STOCK ON THE WAY, AND LATE STAGES OR PAYMENTS COMING DUE SHOW IN "THIS WEEK: LOOK INTO". SAVED WITH YOUR OTHER ENTRIES; A SYNC NEVER CHANGES THEM.
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <form onSubmit={add} className="flex items-end gap-1" aria-label="Start a new run">
@@ -425,6 +438,8 @@ export function ProductionRuns() {
           today={today}
           onChange={(mut) => put((rs) => rs.map((x) => (x.id === r.id ? mut(x) : x)))}
           onDelete={() => put((rs) => rs.filter((x) => x.id !== r.id))}
+          open={openIds.includes(r.id)}
+          onToggle={() => toggle(r.id)}
         />
       ))}
     </div>

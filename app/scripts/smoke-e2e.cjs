@@ -267,7 +267,11 @@ const bank = {
   const card = page.locator('section[aria-label="Production run SMOKE CAP RUN"]');
   t = (await card.innerText()).toUpperCase();
   check('pasted run shows totals: paid, still to pay, unknown freight', t.includes('$812') && /PAID\s+\$400/.test(t) && /STILL TO PAY\s+\$412/.test(t) && t.includes('1 LINE WITH NO AMOUNT YET'));
-  check('next stage and estimated dates from the lead times', t.includes('NEXT: SAMPLES IN HAND') && t.includes('EST.') && t.includes('ARRIVAL UNKNOWN'));
+  check('run card starts folded: next stage and money, no form', t.includes('NEXT: SAMPLES IN HAND') && t.includes('ARRIVAL UNKNOWN') && !t.includes('PAYMENT TERMS'));
+  const tl = (await page.locator('svg[aria-label^="Timeline of 1 production run"]').innerHTML());
+  check('timeline draws the run: phase bars, payment marker, today line', tl.includes('Sampling:') && tl.includes('$400 + ? paid') && tl.includes('TODAY') && tl.includes('arrival not known'));
+  await page.locator('g[aria-label="Open SMOKE CAP RUN"]').click(); await page.waitForTimeout(250);
+  check('clicking a run in the timeline opens its card for editing', (await card.innerText()).toUpperCase().includes('PAYMENT TERMS'));
   await card.locator('button[aria-label="Mark Samples in hand done today"]').click(); await page.waitForTimeout(150);
   check('marking a stage done moves the run on', (await card.innerText()).toUpperCase().includes('NEXT: SAMPLES APPROVED'));
   await page.keyboard.press('s'); await page.waitForTimeout(200);
