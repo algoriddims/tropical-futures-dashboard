@@ -262,7 +262,10 @@ export function stageDates(r: ProductionRun): StageDate[] {
       if (g !== null && g !== undefined) { date = addDays(prev, g); kind = 'estimate'; }
     }
     out.push({ key: s.key, label: s.label, date, kind });
+    // a stage done without a date passes the last known date on; an unknown
+    // stage breaks the chain, so later stages aren't estimated from too far back
     if (date) prev = date;
+    else if (kind !== 'done') prev = null;
   });
   return out;
 }

@@ -81,6 +81,21 @@ describe('production run dates', () => {
     expect(arrivalDate(r)).toEqual({ date: '2027-01-23', kind: 'estimate' });
   });
 
+  it('an unknown stage stops the estimates: later stages are not guessed from an older date', () => {
+    const r = capRun();
+    r.leadTimes = { sampleDays: null, bulkDays: null, transitDays: null };
+    r.stages.SAMPLES_ORDERED = { planned: null, done: null };
+    r.stages.BULK_ORDERED = { planned: null, done: '2026-10-20' };
+    const s = stageDates(r);
+    expect(s.map((x) => [x.key, x.date, x.kind])).toEqual([
+      ['SAMPLES_ORDERED', null, 'done'], ['SAMPLES_RECEIVED', null, 'done'], ['SAMPLES_APPROVED', null, 'done'],
+      ['BULK_ORDERED', '2026-10-20', 'done'],
+      ['BULK_FINISHED', null, null], ['SHIPPED', null, null], ['RECEIVED', null, null],
+    ]);
+    // so the timeline draws bulk with an open end and no transit bar
+    expect(timelineModel([r], '2026-11-17').rows[0].phases.map((p) => [p.key, p.to])).toEqual([['BULK', null]]);
+  });
+
   it('a shipment ETA wins over the estimate; a received run is done', () => {
     const r = capRun();
     r.shipments = [{ id: 's', mode: 'SEA', carrier: 'Line', tracking: 'ABC123', url: null, shipped: '2027-01-02', eta: '2027-01-20', delivered: null }];
