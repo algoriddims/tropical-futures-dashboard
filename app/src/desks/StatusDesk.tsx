@@ -3,15 +3,16 @@ import { useTerminal } from '@/terminal/useTerminal';
 import type { DeskKey } from '@/terminal/desks';
 import {
   monthlyBurn, runwayMonths, daysUntil, burnSource,
-  netCash, cardOwed, monthToDateSales,
+  netCash, cardOwed,
 } from '@/game/engine';
 import { money, pct, plural } from '@/game/format';
-import { InlineNumber } from '@/components/InlineEdit';
 import { AccountLines } from '@/components/BankAccounts';
 import { useAnalytics } from './analytics/useAnalytics';
 import { PerformanceSummary } from './analytics/Performance';
 import { ExceptionsPanel } from './analytics/Exceptions';
 import { MoneyInOut } from './money/MoneyPanels';
+import { HeroTiles } from './overview/HeroTiles';
+import { Fold, MonthsChart, SalesShareChart } from './overview/OverviewCharts';
 import { ProductTable } from './analytics/Products';
 import { ChannelComparison } from './analytics/Channels';
 import { formatRange } from '@/analytics/period';
@@ -66,7 +67,7 @@ function Bar({ pct: p, color }: { pct: number; color: string }) {
 
 
 export default function StatusDesk() {
-  const { data, metrics, setDesk, updateData, imported, importedAt, delta, storedSnapshotErrors, range } = useTerminal();
+  const { data, metrics, setDesk, imported, importedAt, delta, storedSnapshotErrors, range } = useTerminal();
   const an = useAnalytics();
   if (!data || !metrics) return null;
 
@@ -80,14 +81,6 @@ export default function StatusDesk() {
   const dropRetail = data.pipeline
     .filter((p) => p.status === 'READY')
     .reduce((s, p) => s + Math.round(p.qty * p.retail * p.expectedSellThrough), 0);
-
-  // month-to-date sales vs the monthly goal
-  const now = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const mtd = monthToDateSales(data, now);
-  const goal = data.monthlySalesGoal ?? 0;
-  const pace = mtd !== null ? (mtd / now.getDate()) * daysInMonth : null;
-  const monthName = now.toLocaleString('en-US', { month: 'short' }).toUpperCase();
 
   // last complete month of Meta billing seen on the bank/card (not attributed ad spend)
   const lastFull = [...(data.cashflow ?? [])].reverse().find((m) => !m.partial);
@@ -110,105 +103,18 @@ export default function StatusDesk() {
       )}
 
 
-      {/* business decisions first: performance vs prior, then this week's exceptions */}
-      <PerformanceSummary state={an} />
-      {/* the goal counts every channel, so it's measured on money received, not Shopify alone */}
-      <MoneyInOut />
-      <ExceptionsPanel state={an} />
+      {/* 1 · where you stand */}
+      <h2 className="stat-label pt-1">1 · WHERE YOU STAND</h2>
+      <HeroTiles an={an} />
 
-      {an.kind === 'ok' && (
-        <div className="grid grid-cols-1 gap-2 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-          <Window title={`PRODUCTS · ${formatRange(an.view.cmp.current)}`} right={<Jump to="i" />}>
-            <ProductTable v={an.view} limit={8} />
-          </Window>
-          <Window title="DTC VS WHOLESALE" right={<Jump to="l" />}>
-            <ChannelComparison v={an.view} />
-          </Window>
-        </div>
-      )}
+      {/* 2 · what to do */}
+      <div className="pt-1"><ExceptionsPanel state={an} /></div>
 
-      {/* cash, the monthly goal and burn */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        <Window title="CASH ON HAND" right={synced ? 'BANK − CARD OWED' : 'MANUAL ENTRY'}>
-          {synced ? (
-            <>
-              <BigStat
-                label="NET OF CARD"
-                value={money(cash, { cents: true })}
-                tone={cash !== null && cash < 0 ? 'tier-red' : 'phosphor'}
-                size="text-5xl"
-                sub={owed ? `BANK ${money(data.bankBalance, { cents: true })} · CARD OWES ${money(owed, { cents: true })}` : `BANK ${money(data.bankBalance, { cents: true })}`}
-              />
-              <details className="mt-2">
-                <summary className="stat-sub cursor-pointer">ACCOUNTS</summary>
-                <div className="mt-1"><AccountLines accounts={data.accounts!} /></div>
-              </details>
-            </>
-          ) : (
-            <BigStat
-              label="BANK BALANCE"
-              size="text-5xl"
-              value={
-                <InlineNumber
-                  className="font-display phosphor"
-                  value={data.bankBalance}
-                  format={(v) => (v === null ? 'SET' : money(v))}
-                  title="SET BANK BALANCE"
-                  onCommit={(v) => updateData((d) => ({ ...d, bankBalance: v }))}
-                />
-              }
-              sub={data.bankBalance === null ? 'UNKNOWN — CLICK TO ENTER, OR SYNC THE BANK' : 'TYPED IN · SALES ≠ CASH RECEIVED'}
-            />
-          )}
-        </Window>
-
-        <Window title={`SALES IN ${monthName}`} right={<Jump to="o" />}>
-          <BigStat
-            label="SHOPIFY NET SALES, MONTH TO DATE"
-            value={money(mtd)}
-            size="text-5xl"
-            sub={mtd === null ? 'NO DATED DAILY SALES IN THIS SYNC' : `ON PACE FOR ${money(pace)} · DAY ${now.getDate()} OF ${daysInMonth}`}
-          />
-          {synced && <p className="stat-sub mt-2">SHOPIFY ONLY. THE GOAL COUNTS EVERY CHANNEL — SEE MONEY IN VS OUT ABOVE.</p>}
-          {!synced && <div className="mt-2 flex items-center justify-between gap-2 stat-sub">
-            <span>
-              GOAL{' '}
-              <InlineNumber
-                className="warm"
-                value={goal > 0 ? goal : null}
-                format={(v) => (v === null ? 'SET A MONTHLY GOAL' : `${money(v)}/MO`)}
-                title="SET MONTHLY SALES GOAL"
-                onCommit={(v) => updateData((d) => ({ ...d, monthlySalesGoal: Math.max(0, v) }))}
-              />
-            </span>
-            {goal > 0 && mtd !== null && <span className={mtd >= goal ? 'tier-green' : 'warm'}>{pct((mtd / goal) * 100)}</span>}
-          </div>}
-          {!synced && goal > 0 && mtd !== null && (
-            <div className="mt-1 relative">
-              <Bar pct={(mtd / goal) * 100} color={mtd >= goal ? 'var(--palm)' : 'var(--sun)'} />
-              {/* where today should be if sales were spread evenly */}
-              <div className="absolute top-[-2px] h-[10px] w-px bg-[var(--vhs-white)]" style={{ left: `${(now.getDate() / daysInMonth) * 100}%` }} aria-hidden />
-            </div>
-          )}
-        </Window>
-
-        <Window title="BURN & RUNWAY" right={<Jump to="c" />}>
-          <div className="grid grid-cols-2 gap-3">
-            <BigStat
-              label="MONTHLY BURN"
-              value={burn > 0 ? money(burn) : '—'}
-              tone={burn > 0 ? 'tier-red' : 'dim'}
-              sub={burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : burnSource(data) === 'COST_LINES' ? 'YOUR COST LINES' : 'NO COSTS OR SPENDING DATA'}
-            />
-            <BigStat
-              label="RUNWAY"
-              value={runway === null ? '—' : cash !== null && cash < 0 ? 'SHORT' : runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
-              tone={runway === null ? 'dim' : runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}
-              sub={runway === null ? 'CASH UNKNOWN' : cash !== null && cash < 0 ? `${money(cash)} NET OF CARD` : 'NET CASH ÷ BURN'}
-            />
-          </div>
-        </Window>
-
+      {/* 3 · why the numbers look like this */}
+      <h2 className="stat-label pt-2">3 · WHY THE NUMBERS LOOK LIKE THIS</h2>
+      <div className="grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+        <MonthsChart />
+        <SalesShareChart an={an} />
       </div>
 
       {/* drop countdown */}
@@ -226,7 +132,50 @@ export default function StatusDesk() {
         </button>
       )}
 
+      {/* 4 · detail, folded (each fold remembers whether it's open) */}
+      <h2 className="stat-label pt-2">4 · DETAIL</h2>
+      <Fold id="performance" title="SALES VS THE PERIOD BEFORE · MARGIN · ORDERS · RETURNING CUSTOMERS">
+        <PerformanceSummary state={an} />
+      </Fold>
+      <Fold id="money" title="MONEY IN THIS MONTH, IN DETAIL">
+        <MoneyInOut />
+      </Fold>
+      {an.kind === 'ok' && (
+        <Fold id="products" title="PRODUCTS · DTC VS WHOLESALE">
+          <div className="grid grid-cols-1 gap-2 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <Window title={`PRODUCTS · ${formatRange(an.view.cmp.current)}`} right={<Jump to="i" />}>
+              <ProductTable v={an.view} limit={8} />
+            </Window>
+            <Window title="DTC VS WHOLESALE" right={<Jump to="l" />}>
+              <ChannelComparison v={an.view} />
+            </Window>
+          </div>
+        </Fold>
+      )}
+      <Fold id="more" title="BURN & RUNWAY · TRAFFIC · ADS · PRODUCTION · GOALS">
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+        <Window title="BURN & RUNWAY" right={<Jump to="c" />}>
+          <div className="grid grid-cols-2 gap-3">
+            <BigStat
+              label="MONTHLY BURN"
+              value={burn > 0 ? money(burn) : '—'}
+              tone={burn > 0 ? 'tier-red' : 'dim'}
+              sub={burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : burnSource(data) === 'COST_LINES' ? 'YOUR COST LINES' : 'NO COSTS OR SPENDING DATA'}
+            />
+            <BigStat
+              label="RUNWAY"
+              value={runway === null ? '—' : cash !== null && cash < 0 ? 'SHORT' : runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
+              tone={runway === null ? 'dim' : runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}
+              sub={runway === null ? 'CASH UNKNOWN' : cash !== null && cash < 0 ? `${money(cash)} NET OF CARD` : 'NET CASH ÷ SPENDING'}
+            />
+          </div>
+          {synced && (
+            <details className="mt-2">
+              <summary className="stat-sub cursor-pointer">ACCOUNTS{owed ? ` · CARD OWES ${money(owed, { cents: true })}` : ''}</summary>
+              <div className="mt-1"><AccountLines accounts={data.accounts!} /></div>
+            </details>
+          )}
+        </Window>
         <Window title="TRAFFIC" right={`LAST ${range} COMPLETE DAYS`}>
           <div className="grid grid-cols-2 gap-3">
             <BigStat label="SESSIONS" size="text-3xl" value={metrics.guests !== null ? metrics.guests.toLocaleString('en-US') : '—'} sub={metrics.guests === null ? 'NOT IN DATA FOR THIS PERIOD' : 'MEASURED'} />
@@ -297,6 +246,7 @@ export default function StatusDesk() {
           </Window>
         )}
       </div>
+      </Fold>
 
       {/* sync briefing — one line; details live in the import feed */}
       {imported && (

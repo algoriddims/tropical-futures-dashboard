@@ -84,6 +84,7 @@ const bank = {
   page.on('console', (m) => { if (m.type() === 'error' && !(probe404 && /404/.test(m.text()))) errors.push(m.text()); });
   page.on('dialog', (d) => d.accept());
   const body = async () => (await page.locator('body').innerText()).toUpperCase();
+  const openFolds = async () => { await page.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; })); await page.waitForTimeout(150); };
   // The app probes /api/snapshot once to find a shared store; without the
   // hosting server (vite preview) that 404 is expected and means "local mode".
   const probe = (u) => /\/api\/snapshot$/.test(u);
@@ -119,7 +120,7 @@ const bank = {
   check('O opens orders desk with honest tape label', t.includes('ORDER TAPE · SAMPLE') && !/\bLIVE\b/.test(t.split('ORDER TAPE')[1]?.slice(0, 40) ?? ''));
   await page.keyboard.press('3'); await page.waitForTimeout(100);
   await page.keyboard.press('s'); await page.waitForTimeout(150);
-  check('S returns to status desk', (await body()).includes('THIS WEEK: LOOK INTO'));
+  check('S returns to the overview, actions first', (await body()).includes('2 · DO THIS WEEK') && (await body()).includes('1 · WHERE YOU STAND'));
 
   // invalid import is rejected and changes nothing
   await page.click('button[title="IMPORT SYNC DATA"]');
@@ -148,6 +149,9 @@ const bank = {
   await page.waitForSelector('text=LAST SYNC');
   // desk keys are ignored while a dialog is open; the import dialog closes itself after success
   await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
+  t = await body();
+  check('overview detail starts folded', !t.includes('NEEDS SESSIONS') && t.includes('4 · DETAIL'));
+  await openFolds();
   t = await body();
   check('valid import renders snapshot', t.includes('LAST SYNC'));
   check('old coverage flagged even though just imported', t.includes('SYNC NEEDED') && /COVERAGE \d+D AGO/.test(t) && /IMPORTED \d+M AGO/.test(t));
@@ -196,6 +200,9 @@ const bank = {
   await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   await page.keyboard.press('s'); await page.waitForTimeout(200);
   t = await body();
+  check('top tiles: Shopify sales with daily bars, and no bank sync means Shopify-only goal', t.includes('SHOPIFY SALES · LAST 30 DAYS') && t.includes('$50') && t.includes('SHOPIFY ONLY'));
+  await openFolds();
+  t = await body();
   check('performance shows net revenue vs the prior period with dates', t.includes('NET PRODUCT REVENUE') && t.includes('$50') && t.includes('+$10 (+25.0%)') && t.includes(' VS '));
   check('margin change in percentage points', t.includes('60.0%') && t.includes('−15.0 PP'));
   check('selling size that is out of stock is an exception with its rule', t.includes('SMOKE TEE: S UNAVAILABLE') && t.includes('RULE:'));
@@ -217,6 +224,10 @@ const bank = {
   await page.click('button:text-is("IMPORT")');
   await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   await page.keyboard.press('s'); await page.waitForTimeout(200);
+  t = await body();
+  check('money-in tile counts payouts and says the rest is untagged', /MONEY IN · [A-Z]+\s+COSTS →\s+\$200\s+AT LEAST/.test(t) && t.includes('+$500 NOT TAGGED'));
+  check('tagging the deposit is an action this week', t.includes('TAG 1 DEPOSIT ($500)'));
+  await openFolds();
   const moneyPanel = async () => (await page.locator('section[aria-labelledby="mio-h"]').innerText()).toUpperCase();
   t = await moneyPanel();
   check('money in counts payouts and leaves an untagged deposit out', t.includes('MONEY IN VS OUT') && /RECEIVED SO FAR\s+AT LEAST\s+\$200/.test(t) && t.includes('$500 IN 1 DEPOSIT NOT TAGGED YET'));
@@ -239,9 +250,9 @@ const bank = {
   await plan.locator('input[type="date"]').fill(shift(nyToday, 5));
   await plan.locator('button:text-is("ADD")').click(); await page.waitForTimeout(150);
   check('stock on the way is recorded and counted', (await plan.innerText()).toUpperCase().includes('12 UNITS') && (await plan.innerText()).toUpperCase().includes('COUNTED IN THE STOCK CHECKS'));
-  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  await page.keyboard.press('s'); await page.waitForTimeout(200); await openFolds();
   check('the exception names the stock on the way', (await body()).includes('S: 12 UNITS EXPECTED'));
-  await page.reload(); await page.waitForSelector('text=MONEY IN VS OUT');
+  await page.reload(); await page.waitForSelector('text=1 · WHERE YOU STAND'); await openFolds();
   t = await moneyPanel();
   check('tags and stock on the way survive a reload', /RECEIVED SO FAR\s+\$700/.test(t) && (await body()).includes('S: 12 UNITS EXPECTED'));
 
@@ -278,7 +289,7 @@ const bank = {
   check('a payment due this week is in the look-into list', (await body()).includes('SMOKE CAP RUN: A PAYMENT IS DUE'));
   await page.keyboard.press('c'); await page.waitForTimeout(200);
   check('the unpaid cost is in the cash forecast', (await body()).includes('SMOKE CAP RUN: GREY CAPS DUE'));
-  await page.reload(); await page.waitForSelector('text=MONEY IN VS OUT');
+  await page.reload(); await page.waitForSelector('text=1 · WHERE YOU STAND'); await openFolds();
   await page.keyboard.press('p'); await page.waitForTimeout(200);
   check('runs survive a reload', (await page.locator('section[aria-label="Production run SMOKE CAP RUN"]').innerText()).toUpperCase().includes('NEXT: SAMPLES APPROVED'));
 
