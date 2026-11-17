@@ -6,6 +6,7 @@ import { useTerminal } from '@/terminal/useTerminal';
 import { lastCompleteDays } from '@/analytics/period';
 import type { Comparison } from '@/analytics/period';
 import * as M from '@/analytics/metrics';
+import { runIncoming } from '@/game/production';
 import type { AnalyticsSnapshot, StockPlan } from '@/analytics/types';
 
 export interface AnalyticsView {
@@ -26,9 +27,11 @@ export function useAnalytics(): AnalyticsState {
   const { data, range, channelFilter } = useTerminal();
   const a = data?.analytics;
   const incoming = data?.incomingStock;
+  const runs = data?.productionRuns;
   const leadTimeWeeks = data?.leadTimeWeeks ?? null;
-  // the owner's stock-on-the-way entries and lead time feed the stock checks
-  const plan = useMemo<StockPlan>(() => ({ leadTimeWeeks, incoming: incoming ?? [] }), [incoming, leadTimeWeeks]);
+  // the owner's stock-on-the-way entries, production runs linked to Shopify
+  // products, and the lead time feed the stock checks
+  const plan = useMemo<StockPlan>(() => ({ leadTimeWeeks, incoming: [...(incoming ?? []), ...runIncoming(runs ?? [])] }), [incoming, runs, leadTimeWeeks]);
   return useMemo<AnalyticsState>(() => {
     if (!a) return { kind: 'none' };
     if (!a.timezone) return { kind: 'no-timezone', a };

@@ -2,6 +2,7 @@
 // Pure functions over ParkData. Thresholds and formulas live here so they
 // can be tuned without touching UI.
 
+import { runCashDue } from './production';
 import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier, RideState, DayPoint, CashMonth } from './types';
 import { money, plural } from './format';
 
@@ -471,6 +472,11 @@ export function forecastCashflow(d: ParkData, monthlyRevenue: number, months = 6
   const burn = monthlyBurn(d);
   const committed = d.costs.filter((c) => c.active && c.cadence === 'ONE-OFF');
   const uncommitted = d.pipeline.filter((i) => i.status === 'DESIGN' || i.status === 'SAMPLES');
+  const runDue = runCashDue(d.productionRuns ?? []).map((c) => {
+    if (!c.due) return { ...c, monthIndex: 0 };
+    const [y, mo] = c.due.split('-').map(Number);
+    return { ...c, monthIndex: Math.max(0, (y - now.getFullYear()) * 12 + (mo - 1 - now.getMonth())) };
+  });
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const out: ForecastMonth[] = [];
   let bank = start;
@@ -484,6 +490,13 @@ export function forecastCashflow(d: ParkData, monthlyRevenue: number, months = 6
       for (const c of committed) {
         productionOut += c.amount;
         events.push({ text: `${c.name} PAID`, amount: -c.amount });
+      }
+    }
+    // unpaid production costs on their due month; overdue or undated ones now
+    for (const c of runDue) {
+      if (c.monthIndex === m) {
+        productionOut += c.amount;
+        events.push({ text: `${c.run.toUpperCase()}: ${c.description.toUpperCase()} DUE${c.due ? '' : ' (DATE NOT SET)'}`, amount: -c.amount });
       }
     }
     for (const i of uncommitted) {

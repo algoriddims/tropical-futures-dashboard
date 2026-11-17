@@ -4,6 +4,7 @@
 // are kept so existing park-data.json syncs still import.
 
 import type { AnalyticsSnapshot, IncomingStock } from '../analytics/types';
+import type { ProductionRun } from './production';
 
 export type Tier = 'red' | 'amber' | 'green';
 export type RideState = 'THRIVING' | 'NORMAL' | 'QUIET' | 'SOLD OUT' | 'CLOSED';
@@ -219,6 +220,8 @@ export interface ParkData {
   /** Manual: stock on the way and the reorder lead time. */
   incomingStock?: IncomingStock[];
   leadTimeWeeks?: number | null;
+  /** Manual: supplier orders with costs, stages, shipments and links (src/game/production.ts). */
+  productionRuns?: ProductionRun[];
   /** Normalized Shopify analytics records (variant grain, minor units) — see src/analytics/types.ts. */
   analytics?: AnalyticsSnapshot;
   grossMargin: number;

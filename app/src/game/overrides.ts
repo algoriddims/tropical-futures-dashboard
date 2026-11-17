@@ -3,10 +3,11 @@
 //
 //   MANUAL (terminal)  bankBalance, costs, growthTargetPct, wholesalePct,
 //                      nextDrop, annualBudget, monthlySalesGoal, depositTags,
-//                      vendorMarks, incomingStock, leadTimeWeeks — entered by
-//                      hand, saved on the server (browser storage is a cache),
-//                      re-applied over every import. The last four come only
-//                      from the manual store: an import can't set them.
+//                      vendorMarks, incomingStock, leadTimeWeeks,
+//                      productionRuns — entered by hand, saved on the server
+//                      (browser storage is a cache), re-applied over every
+//                      import. The last five come only from the manual store:
+//                      an import can't set them.
 //   SYNC (import)      everything else — products, pipeline, channels, orders,
 //                      campaigns, days, quests, rates, meta. Replaced whole by
 //                      each valid import.
@@ -19,11 +20,13 @@
 
 import type { CostItem, DepositTag, ParkData, VendorMark } from './types';
 import type { IncomingStock } from '../analytics/types';
+import type { ProductionRun } from './production';
+import { storedRuns } from './production';
 import { syncedCash } from './engine';
 import { validateParkData } from './validate';
 
 export const FIELD_OWNERSHIP = {
-  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal', 'depositTags', 'vendorMarks', 'incomingStock', 'leadTimeWeeks'],
+  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal', 'depositTags', 'vendorMarks', 'incomingStock', 'leadTimeWeeks', 'productionRuns'],
   syncWithOverride: ['channels[].stock[].allocated', 'channels[].stock[].sold'],
 } as const;
 
@@ -56,6 +59,7 @@ export interface ManualSlices {
   /** Stock on the way and the reorder lead time (weeks; null = not set). */
   incomingStock: IncomingStock[];
   leadTimeWeeks: number | null;
+  productionRuns: ProductionRun[];
   shelfEdits: ShelfEdit[];
 }
 
@@ -88,6 +92,8 @@ export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData 
     vendorMarks: m.vendorMarks ?? {},
     incomingStock: m.incomingStock ?? [],
     leadTimeWeeks: m.leadTimeWeeks ?? null,
+    // malformed runs (an old or hand-edited store) are left out rather than half-rendered
+    productionRuns: storedRuns(m.productionRuns).runs,
   };
 }
 
@@ -110,6 +116,7 @@ export function extractManual(d: ParkData): Partial<Omit<ManualSlices, 'shelfEdi
     vendorMarks: d.vendorMarks ?? {},
     incomingStock: d.incomingStock ?? [],
     leadTimeWeeks: d.leadTimeWeeks ?? null,
+    productionRuns: d.productionRuns ?? [],
   };
 }
 

@@ -1,4 +1,5 @@
 import { useTerminal } from '@/terminal/useTerminal';
+import { ProductionRuns } from './production/ProductionRuns';
 import { pipelineGross, pipelineCost, pipelineNet, pipelineMargin, pipelineExpectedNet } from '@/game/engine';
 import type { PipelineItem } from '@/game/types';
 import { money, pct } from '@/game/format';
@@ -35,30 +36,29 @@ function StageTrack({ status }: { status: PipelineItem['status'] }) {
   );
 }
 
+// The owner's production runs, then any planned runs that came in a sync
+// (the sample data has some; a real Shopify sync has none).
 export default function PipelineDesk() {
+  const { data } = useTerminal();
+  if (!data) return null;
+  return (
+    <div className="h-full overflow-y-auto p-2 space-y-2">
+      <ProductionRuns />
+      {data.pipeline.length > 0 && <LegacyPipeline />}
+    </div>
+  );
+}
+
+function LegacyPipeline() {
   const { data, metrics } = useTerminal();
   if (!data || !metrics) return null;
 
-  if (data.pipeline.length === 0) {
-    return (
-      <div className="h-full overflow-y-auto p-2">
-        <section className="window" aria-label="Production">
-          <div className="window-head"><h2 className="wh-title">PRODUCTION</h2><span className="wh-note">NO RUNS RECORDED</span></div>
-          <div className="window-body stat-sub">
-            NO PRODUCTION RUNS ARE IN THE SYNC. ONCE RUNS ARE RECORDED (DESIGN → SAMPLES → PRODUCTION → READY), THIS SHOWS COST,
-            EXPECTED REVENUE AND TIMING, AND THE CASH FORECAST PICKS THEM UP.
-          </div>
-        </section>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full overflow-y-auto p-2 space-y-2">
+    <div className="space-y-2">
       {/* summary strip */}
       <div className="window">
         <div className="window-head">
-          <span className="wh-title">PIPELINE TOTALS</span>
+          <span className="wh-title">PLANNED RUNS FROM THE SYNC</span>
           <span className="dim text-sm">{metrics.pipelineUnits} UNITS ACROSS {data.pipeline.length} RUNS</span>
         </div>
         <div className="window-body grid grid-cols-2 gap-3 text-center md:grid-cols-5">
