@@ -374,7 +374,7 @@ describe('exceptions ranked by sales at risk', () => {
     expect(ex[1].atRisk).toBe(6000);         // 2 tees × $30
     expect(ex[0].actions[0]).toContain('set a lead time');
     // a size that is already out is told so, not given a run-out date
-    expect(ex[1].actions[0]).toBe('S: out of stock now — set a lead time on the inventory page to see when a new order would land');
+    expect(ex[1].actions[0]).toBe('S: out of stock now — set a lead time on the Stock page to see when a new order would land');
     const withLead = buildExceptions(f, RISK_CMP, productPerformance(f, RISK_CMP), undefined, undefined, { leadTimeWeeks: 6, incoming: [] });
     expect(withLead[1].actions[0]).toBe('S: out of stock now — an order placed today lands around 10 Dec (6-week lead time)');
   });

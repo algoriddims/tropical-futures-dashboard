@@ -114,7 +114,7 @@ export const METRICS: MetricDef[] = [
   {
     id: 'reorder-by', name: 'Reorder-by date', status: 'implemented',
     formula: 'run-out day − lead time, where run-out day = inventory-read day + ⌊sellable ÷ daily pace⌋ + 1. If that date has passed: "order now", with the days without stock = landing day − run-out day.',
-    requires: 'The owner\'s lead time in weeks (typed in on the inventory page). Without it no date is shown.',
+    requires: 'The owner\'s lead time in weeks (typed in on the Stock page). Without it no date is shown.',
     eligible: 'Variants raised in the "look into" list that have no dated stock on the way.',
     timeBasis: 'Calendar days from the inventory read, business timezone.',
     refunds: '—', currency: '—',

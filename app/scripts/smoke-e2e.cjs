@@ -213,6 +213,10 @@ const bank = {
   await page.keyboard.press('Escape');
   await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   await page.keyboard.press('i'); await page.waitForTimeout(200);
+  t = await body();
+  check('stock desk reads in four tiers', t.includes('1 · WHERE STOCK STANDS') && t.includes('SALES AT RISK · NEXT 4 WEEKS') && t.includes('WHEN EACH SIZE RUNS OUT') && t.includes('WHICH SIZES SELL') && t.includes('WHERE THE MONEY IN STOCK SITS'));
+  check('stock desk lists the stock action without linking to itself', t.includes('SMOKE TEE: S UNAVAILABLE') && !(await page.locator('section[aria-labelledby="st-2"]').innerText()).toUpperCase().includes('STOCK →'));
+  await openFolds();
   await page.click('button:has-text("SIZE AVAILABILITY")');
   await page.waitForTimeout(150);
   t = await body();
@@ -242,7 +246,7 @@ const bank = {
   check('a tagged deposit counts toward money received', /RECEIVED SO FAR\s+\$700/.test(t) && !t.includes('NOT TAGGED YET') && t.includes('+$600'));
   t = await body();
   check('exceptions show the sales at risk', t.includes('OF SALES AT RISK IN THE NEXT 4 WEEKS') && t.includes('S: OUT OF STOCK NOW'));
-  await page.keyboard.press('i'); await page.waitForTimeout(200);
+  await page.keyboard.press('i'); await page.waitForTimeout(200); await openFolds();
   const plan = page.locator('section[aria-labelledby="sp-h"]');
   await plan.locator('select').first().selectOption({ label: 'SMOKE TEE' });
   await plan.locator('select').nth(1).selectOption({ label: 'S' });

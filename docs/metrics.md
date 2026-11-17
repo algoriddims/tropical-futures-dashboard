@@ -108,7 +108,7 @@ Comparisons: absolute change for money and units; percentage-point change for pe
 ## Reorder-by date
 
 - **Formula:** run-out day − lead time, where run-out day = inventory-read day + ⌊sellable ÷ daily pace⌋ + 1. If that date has passed: "order now", with the days without stock = landing day − run-out day.
-- **Requires:** The owner's lead time in weeks (typed in on the inventory page). Without it no date is shown.
+- **Requires:** The owner's lead time in weeks (typed in on the Stock page). Without it no date is shown.
 - **Eligible records:** Variants raised in the "look into" list that have no dated stock on the way.
 - **Time basis:** Calendar days from the inventory read, business timezone.
 - **Refunds:** —

@@ -480,3 +480,30 @@ export function timelineModel(runs: ProductionRun[], today: Ymd): Timeline {
     .map((day) => ({ label: 'Chinese New Year', day, from: addDays(day, -10), to: addDays(day, 14) }));
   return { from, to, today, rows, holidays };
 }
+
+/**
+ * A reorder lead time to offer when none is set: bulk production + transit
+ * days from the most recent run that has both (sampling is left out — a
+ * reorder of an existing design skips it). Rounded to half a week. Only a
+ * suggestion: the owner sets the lead time.
+ */
+export function suggestedLeadWeeks(runs: ProductionRun[]): { weeks: number; days: number; run: string } | null {
+  const known = runs
+    .filter((r) => r.leadTimes.bulkDays !== null && r.leadTimes.transitDays !== null)
+    .sort((a, b) => (b.invoiceDate ?? b.createdAt).localeCompare(a.invoiceDate ?? a.createdAt));
+  const r = known[0];
+  if (!r) return null;
+  const days = r.leadTimes.bulkDays! + r.leadTimes.transitDays!;
+  if (days <= 0) return null;
+  return { weeks: Math.max(0.5, Math.round((days / 7) * 2) / 2), days, run: r.name };
+}
+
+/** Goods units in runs not yet received that aren't linked to a Shopify product (not counted as stock on the way). */
+export function unlinkedRunUnits(runs: ProductionRun[]): number {
+  let n = 0;
+  for (const r of runs) {
+    if (arrivalDate(r).kind === 'done') continue;
+    for (const c of r.costs) if (c.kind === 'GOODS' && !c.productId && c.units) n += c.units;
+  }
+  return n;
+}

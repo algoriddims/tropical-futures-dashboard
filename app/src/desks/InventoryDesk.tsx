@@ -1,9 +1,15 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAnalytics } from './analytics/useAnalytics';
 import { ProductTable, SizeMatrix } from './analytics/Products';
 import { StockPlanPanel } from './analytics/StockPlanPanel';
 import { ChannelFilterControl } from './analytics/Performance';
 import { formatRange } from '@/analytics/period';
+import { runway, shelfValue, sizeCurves } from '@/analytics/stock';
+import type { DeskKey } from '@/terminal/desks';
+import { ActionList } from './analytics/ActionList';
+import { Fold } from './overview/OverviewCharts';
+import { StockTiles } from './stock/StockTiles';
+import { RunwayChart, ShelfChart, SizeCurveChart } from './stock/StockCharts';
 import { useTerminal } from '@/terminal/useTerminal';
 import { rideState, sellThrough, hasSellThrough, daysOfStock } from '@/game/engine';
 import type { Product } from '@/game/types';
@@ -29,39 +35,78 @@ function stateTone(state: string, p: Product): string {
   return p.restockPolicy === 'LIMITED' ? 'palm' : p.restockPolicy === 'REPLENISH' ? 'tier-red' : 'tier-amber';
 }
 
-// With variant-level analytics: sortable products (incl. zero sellers) and a
-// size-availability matrix. Without (sample data, older syncs): the original list.
+// The Stock desk, in four tiers like the overview: where stock stands, what to
+// do about it, why (when each size runs out, which sizes sell, where the money
+// in stock sits), and the full tables folded away. Without variant-level
+// analytics (sample data, older syncs): the original list.
 export default function InventoryDesk() {
   const an = useAnalytics();
+  const { setDesk } = useTerminal();
   const [view, setView] = useState<'products' | 'sizes'>('products');
-  if (an.kind !== 'ok') return <LegacyInventory note={an.kind === 'none' ? undefined : 'BUSINESS TIMEZONE NOT CONFIGURED — PERIOD SALES UNAVAILABLE.'} />;
-  const v = an.view;
+  const v = an.kind === 'ok' ? an.view : null;
+  const r = useMemo(() => (v ? runway(v.a, v.products, v.plan) : null), [v]);
+  const curves = useMemo(() => (v ? sizeCurves(v.a) : null), [v]);
+  const shelf = useMemo(() => (v ? shelfValue(v.a) : null), [v]);
+  if (!v || !curves || !shelf) return <LegacyInventory note={an.kind === 'none' ? undefined : 'BUSINESS TIMEZONE NOT CONFIGURED — PERIOD SALES UNAVAILABLE.'} />;
+  const stock = v.exceptions.filter((e) => e.drill.desk === 'i');
   return (
-    <div className="h-full overflow-y-auto p-2 space-y-2">
-      <StockPlanPanel v={v} />
-      <section className="window" aria-labelledby="inv-h">
-        <div className="window-head flex-wrap">
-          <h2 id="inv-h" className="wh-title">PRODUCTS & SIZES</h2>
-          <span className="wh-note flex-wrap">
-            <span role="group" aria-label="View" className="flex gap-1">
-              {(['products', 'sizes'] as const).map((k) => (
-                <button key={k} onClick={() => setView(k)} aria-pressed={view === k}
-                  className={`tap border px-2 py-0.5 font-display text-sm ${view === k ? 'border-[var(--q-strong,var(--phosphor))] text-[var(--vhs-white)]' : 'border-[var(--crt-line)] dim'}`}>
-                  {k === 'products' ? 'PRODUCTS' : 'SIZE AVAILABILITY'}
-                </button>
-              ))}
-            </span>
-            {view === 'products' && <ChannelFilterControl />}
-          </span>
+    <div className="h-full overflow-y-auto p-2 space-y-3">
+      <section aria-labelledby="st-1" className="space-y-2">
+        <h2 id="st-1" className="stat-label px-1">1 · WHERE STOCK STANDS <span className="dim">· AS OF {new Date(v.a.inventoryAsOf).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase()}</span></h2>
+        <StockTiles v={v} r={r} shelf={shelf} stock={stock} />
+      </section>
+
+      <section className="window" aria-labelledby="st-2">
+        <div className="window-head">
+          <h2 id="st-2" className="wh-title">2 · DO THIS WEEK</h2>
+          <span className="wh-note">{stock.length ? `${plural(stock.length, 'STOCK ISSUE')} · MOST SALES AT RISK FIRST` : ''}</span>
         </div>
-        <div className="window-body space-y-2">
-          <p className="stat-sub">
-            {view === 'products'
-              ? `SALES: ${formatRange(v.cmp.current)} VS ${formatRange(v.cmp.prior)} (PERIOD AND CHANNEL FILTERS APPLY). STOCK AND COVER: AS OF ${new Date(v.a.inventoryAsOf).toLocaleString()}, ALL CHANNELS. CUMULATIVE DROP SELL-THROUGH IS UNAVAILABLE — NO DROP MAPPING OR RECEIPT HISTORY; "PUBLISHED" IS THE SHOPIFY PUBLISH DATE, NOT A DROP LAUNCH.`
-              : 'WHICH SIZES CAN BE BOUGHT RIGHT NOW. FILTERS DON\'T APPLY — THIS IS THE CURRENT STOCK READ.'}
-          </p>
-          {view === 'products' ? <ProductTable v={v} /> : <SizeMatrix v={v} />}
+        <div className="window-body">
+          <ActionList items={stock} currency={v.a.currency} onDrill={(d) => setDesk(d as DeskKey)} hideDrillTo="i"
+            empty="NO SELLING SIZE IS OUT OR RUNNING LOW AT THE RECENT PACE." />
         </div>
+      </section>
+
+      <section aria-labelledby="st-3" className="space-y-2">
+        <h2 id="st-3" className="stat-label px-1">3 · WHY</h2>
+        <RunwayChart r={r} currency={v.a.currency} />
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+          <SizeCurveChart c={curves} />
+          <ShelfChart v={shelf} currency={v.a.currency} />
+        </div>
+      </section>
+
+      <section aria-labelledby="st-4" className="space-y-2">
+        <h2 id="st-4" className="stat-label px-1">4 · DETAIL</h2>
+        <Fold id="stock-products" title="PRODUCTS AND SIZES — TABLES">
+          <div className="window">
+            <div className="window-head flex-wrap">
+              <h3 className="wh-title">PRODUCTS & SIZES</h3>
+              <span className="wh-note flex-wrap">
+                <span role="group" aria-label="View" className="flex gap-1">
+                  {(['products', 'sizes'] as const).map((k) => (
+                    <button key={k} onClick={() => setView(k)} aria-pressed={view === k}
+                      className={`tap border px-2 py-0.5 font-display text-sm ${view === k ? 'border-[var(--q-strong,var(--phosphor))] text-[var(--vhs-white)]' : 'border-[var(--crt-line)] dim'}`}>
+                      {k === 'products' ? 'PRODUCTS' : 'SIZE AVAILABILITY'}
+                    </button>
+                  ))}
+                </span>
+                {view === 'products' && <ChannelFilterControl />}
+              </span>
+            </div>
+            <div className="window-body space-y-2">
+              <p className="stat-sub">
+                {view === 'products'
+                  ? `SALES: ${formatRange(v.cmp.current)} VS ${formatRange(v.cmp.prior)} (PERIOD AND CHANNEL FILTERS APPLY). STOCK AND COVER: AS OF ${new Date(v.a.inventoryAsOf).toLocaleString()}, ALL CHANNELS. CUMULATIVE DROP SELL-THROUGH IS UNAVAILABLE — NO DROP MAPPING OR RECEIPT HISTORY; "PUBLISHED" IS THE SHOPIFY PUBLISH DATE, NOT A DROP LAUNCH.`
+                  : 'WHICH SIZES CAN BE BOUGHT RIGHT NOW. FILTERS DON\'T APPLY — THIS IS THE CURRENT STOCK READ.'}
+              </p>
+              {view === 'products' ? <ProductTable v={v} /> : <SizeMatrix v={v} />}
+            </div>
+          </div>
+        </Fold>
+        <Fold id="stock-incoming" title="STOCK ON THE WAY — ADD OR REMOVE">
+          <StockPlanPanel v={v} />
+        </Fold>
       </section>
     </div>
   );
