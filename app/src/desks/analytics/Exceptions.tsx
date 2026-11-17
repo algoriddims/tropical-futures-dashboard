@@ -5,6 +5,8 @@ import { money } from '@/game/format';
 import type { Exception } from '@/analytics/metrics';
 import { rankExceptions } from '@/analytics/metrics';
 import { formatMoney } from '@/analytics/money';
+import { todayIn } from '@/analytics/period';
+import { productionAlerts } from '@/game/production';
 import type { AnalyticsState } from './useAnalytics';
 
 // Up to three exceptions, the most money at stake first. Each names the item, the
@@ -24,9 +26,15 @@ export function ExceptionsPanel({ state }: { state: AnalyticsState }) {
       drill: { desk: 'c', label: 'Open costs & cash' }, evidence: 'sufficient', atRisk: 0, actions: [],
     });
   }
+  // production: stages past their date and payments coming due (no sales estimate, so after stock risks)
+  const tz = state.kind === 'ok' ? state.view.a.timezone : null;
+  const prod: Exception[] = productionAlerts(data.productionRuns ?? [], todayIn(tz ?? 'America/New_York')).map((p) => ({
+    id: p.id, severity: 2, title: p.title, affected: p.run, numbers: p.numbers, rule: p.rule,
+    drill: { desk: 'p', label: 'Open production' }, evidence: 'sufficient', atRisk: 0, actions: [],
+  }));
   // cash short comes first; the rest by estimated sales at risk
-  const ranked = [...list, ...(state.kind === 'ok' ? rankExceptions(state.view.exceptions) : [])];
-  list.push(...(state.kind === 'ok' ? state.view.exceptions : []));
+  const ranked = [...list, ...rankExceptions([...(state.kind === 'ok' ? state.view.exceptions : []), ...prod])];
+  list.push(...(state.kind === 'ok' ? state.view.exceptions : []), ...prod);
   const top = ranked.slice(0, 3);
   const currency = state.kind === 'ok' ? state.view.a.currency : 'USD';
   const more = list.length - top.length;
@@ -38,7 +46,7 @@ export function ExceptionsPanel({ state }: { state: AnalyticsState }) {
         <span className="wh-note">{list.length ? `TOP ${top.length} OF ${list.length}` : ''}</span>
       </div>
       <div className="window-body">
-        {state.kind !== 'ok' && <p className="stat-sub mb-2">PRODUCT AND STOCK CHECKS NEED A SYNC WITH VARIANT-LEVEL DATA; ONLY CASH IS CHECKED HERE.</p>}
+        {state.kind !== 'ok' && <p className="stat-sub mb-2">PRODUCT AND STOCK CHECKS NEED A SYNC WITH VARIANT-LEVEL DATA; ONLY CASH AND PRODUCTION ARE CHECKED HERE.</p>}
         {top.length === 0 ? (
           <p className="font-display text-sm tier-green">NOTHING MET AN EXCEPTION RULE IN THIS PERIOD.</p>
         ) : (

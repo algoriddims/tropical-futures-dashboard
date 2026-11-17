@@ -245,6 +245,39 @@ const bank = {
   t = await moneyPanel();
   check('tags and stock on the way survive a reload', /RECEIVED SO FAR\s+\$700/.test(t) && (await body()).includes('S: 12 UNITS EXPECTED'));
 
+  // production runs: paste one, see it priced and dated, and see it reach the look-into list
+  const stagesOf = (done) => Object.fromEntries(['SAMPLES_ORDERED', 'SAMPLES_RECEIVED', 'SAMPLES_APPROVED', 'BULK_ORDERED', 'BULK_FINISHED', 'SHIPPED', 'RECEIVED'].map((k) => [k, { planned: null, done: k === 'SAMPLES_ORDERED' ? done : null }]));
+  const run = {
+    id: 'run-smoke', name: 'SMOKE CAP RUN', supplier: '', invoiceRef: '', invoiceDate: shift(nyToday, -2), terms: 'Pay upfront', incoterm: 'DDP', destination: 'Philippines',
+    leadTimes: { sampleDays: 20, bulkDays: 25, transitDays: null }, stages: stagesOf(shift(nyToday, -2)),
+    costs: [
+      { id: 'c1', kind: 'GOODS', description: 'Grey caps', units: 100, unitPrice: 4.12, amount: null, paid: false, date: shift(nyToday, 3), productId: null, variantId: null },
+      { id: 'c2', kind: 'SAMPLES', description: 'Samples', units: 5, unitPrice: 80, amount: null, paid: true, date: null, productId: null, variantId: null },
+      { id: 'c3', kind: 'FREIGHT', description: 'DDP freight', units: null, unitPrice: null, amount: null, paid: true, date: null, productId: null, variantId: null },
+    ],
+    shipments: [], links: [], notes: '', createdAt: new Date().toISOString(),
+  };
+  await page.keyboard.press('p'); await page.waitForTimeout(200);
+  await page.click('button:has-text("PASTE A RUN")');
+  await page.fill('textarea[aria-label="Run to paste"]', '{ broken');
+  await page.click('button:has-text("ADD THIS RUN")');
+  check('a broken pasted run is refused with a reason', (await body()).includes('NOT VALID JSON'));
+  await page.fill('textarea[aria-label="Run to paste"]', JSON.stringify(run));
+  await page.click('button:has-text("ADD THIS RUN")'); await page.waitForTimeout(150);
+  const card = page.locator('section[aria-label="Production run SMOKE CAP RUN"]');
+  t = (await card.innerText()).toUpperCase();
+  check('pasted run shows totals: paid, still to pay, unknown freight', t.includes('$812') && /PAID\s+\$400/.test(t) && /STILL TO PAY\s+\$412/.test(t) && t.includes('1 LINE WITH NO AMOUNT YET'));
+  check('next stage and estimated dates from the lead times', t.includes('NEXT: SAMPLES IN HAND') && t.includes('EST.') && t.includes('ARRIVAL UNKNOWN'));
+  await card.locator('button[aria-label="Mark Samples in hand done today"]').click(); await page.waitForTimeout(150);
+  check('marking a stage done moves the run on', (await card.innerText()).toUpperCase().includes('NEXT: SAMPLES APPROVED'));
+  await page.keyboard.press('s'); await page.waitForTimeout(200);
+  check('a payment due this week is in the look-into list', (await body()).includes('SMOKE CAP RUN: A PAYMENT IS DUE'));
+  await page.keyboard.press('c'); await page.waitForTimeout(200);
+  check('the unpaid cost is in the cash forecast', (await body()).includes('SMOKE CAP RUN: GREY CAPS DUE'));
+  await page.reload(); await page.waitForSelector('text=MONEY IN VS OUT');
+  await page.keyboard.press('p'); await page.waitForTimeout(200);
+  check('runs survive a reload', (await page.locator('section[aria-label="Production run SMOKE CAP RUN"]').innerText()).toUpperCase().includes('NEXT: SAMPLES APPROVED'));
+
   check('no console/page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();
   const failed = results.filter((r) => !r.ok).length;
