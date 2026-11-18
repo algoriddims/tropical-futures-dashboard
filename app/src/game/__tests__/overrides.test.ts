@@ -140,6 +140,7 @@ describe('owner decisions about synced records', () => {
     vendorMarks: { 'Some Tool': 'CUT' as const },
     incomingStock: [{ id: 'in-1', productId: 'P1', variantId: null, units: 40, expectedDate: '2026-11-20' }],
     leadTimeWeeks: 8,
+    timelessProducts: ['P1'],
   };
 
   it('are applied from the manual store and round-trip through extractManual', () => {
@@ -156,5 +157,11 @@ describe('owner decisions about synced records', () => {
     expect(d.vendorMarks).toEqual({});
     expect(d.incomingStock).toEqual([]);
     expect(d.leadTimeWeeks).toBeNull();
+    expect(d.timelessProducts).toEqual([]);
+  });
+
+  it('keeps only product ids in the Timeless list', () => {
+    const d = applyManual(clone(fixtureData), { timelessProducts: ['P1', 'P1', 7 as unknown as string, 'P2'] });
+    expect(d.timelessProducts).toEqual(['P1', 'P2']);
   });
 });

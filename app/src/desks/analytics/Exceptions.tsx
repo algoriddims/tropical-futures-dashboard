@@ -1,87 +1,78 @@
 import { useTerminal } from '@/terminal/useTerminal';
+import { ActionList } from './ActionList';
 import type { DeskKey } from '@/terminal/desks';
 import { cardOwed, netCash } from '@/game/engine';
-import { money } from '@/game/format';
+import { money, plural } from '@/game/format';
 import type { Exception } from '@/analytics/metrics';
 import { rankExceptions } from '@/analytics/metrics';
-import { formatMoney } from '@/analytics/money';
 import { todayIn } from '@/analytics/period';
 import { productionAlerts } from '@/game/production';
+import { monthMoney, taggedDeposits } from '@/game/moneyIn';
 import type { AnalyticsState } from './useAnalytics';
 
-// Up to three exceptions, the most money at stake first. Each names the item, the
-// supporting numbers, the rule that fired and where to look next. Cash
-// running short outranks everything else when it applies.
+// Up to three things to do this week, the most money at stake first. Cash
+// running short outranks everything; then stock problems by estimated sales
+// at risk; then items with no sales estimate (deposits to tag, production
+// dates and payments, unmapped channels). Every row's bar is on one scale, so
+// a short bar is a small problem. The supporting numbers and the rule that
+// fired sit behind "why" on each row.
 export function ExceptionsPanel({ state }: { state: AnalyticsState }) {
   const { data, setDesk } = useTerminal();
   if (!data) return null;
-  const list: Exception[] = [];
+  const first: Exception[] = [];
   const cash = netCash(data);
   if (cash !== null && cash < 0 && data.accounts?.length) {
     const owed = cardOwed(data);
-    list.push({
+    first.push({
       id: 'cash', severity: 1, title: 'Cash on hand is below zero', affected: 'Business bank + card',
       numbers: [`Bank ${money(data.bankBalance, { cents: true })}`, ...(owed ? [`Card owes ${money(owed, { cents: true })}`] : []), `Net ${money(cash, { cents: true })}`],
       rule: 'Synced checking + savings minus the synced card balance is negative.',
-      drill: { desk: 'c', label: 'Open costs & cash' }, evidence: 'sufficient', atRisk: 0, actions: [],
+      drill: { desk: 'c', label: 'Costs & cash' }, evidence: 'sufficient', atRisk: 0, actions: [],
     });
   }
-  // production: stages past their date and payments coming due (no sales estimate, so after stock risks)
-  const tz = state.kind === 'ok' ? state.view.a.timezone : null;
-  const prod: Exception[] = productionAlerts(data.productionRuns ?? [], todayIn(tz ?? 'America/New_York')).map((p) => ({
+  const tz = state.kind === 'ok' ? state.view.a.timezone ?? 'America/New_York' : 'America/New_York';
+  const today = todayIn(tz);
+
+  // deposits the bank can't label: until tagged they don't count toward the goal
+  const waiting = taggedDeposits(data).filter((x) => !x.tag);
+  const tag: Exception[] = [];
+  if (waiting.length) {
+    const goal = data.monthlySalesGoal ?? 0;
+    const month = data.accounts?.length ? todayIn(tz, new Date(data.accounts.map((a) => a.asOf).sort()[0])).slice(0, 7) : today.slice(0, 7);
+    const m = monthMoney(data, month);
+    const decides = goal > 0 && m && m.counted < goal && m.counted + m.untagged >= goal;
+    const total = waiting.reduce((s, x) => s + x.amount, 0);
+    tag.push({
+      id: 'tag-deposits', severity: 1,
+      title: `Tag ${plural(waiting.length, 'deposit')} (${money(total)})${decides ? ` — they decide whether ${new Date(`${month}-15T12:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })} reaches ${money(goal)}` : ''}`,
+      affected: 'Money in',
+      numbers: waiting.slice(0, 3).map((x) => `${x.date}: ${money(x.amount, { cents: true })} — ${x.label}${x.memo ? ` "${x.memo}"` : ''}`),
+      rule: 'Deposits that aren\'t Shopify or PayPal payouts count toward the goal only once tagged as stockist or client money.',
+      drill: { desk: 'c', label: 'Costs' }, evidence: 'sufficient', atRisk: 0,
+      actions: [(() => { const big = [...waiting].sort((a, b) => b.amount - a.amount)[0]; return `Biggest: ${money(big.amount)} on ${big.date} (${big.label}). Stockist or client money counts toward the goal; your own doesn't`; })()],
+    });
+  }
+
+  const prod: Exception[] = productionAlerts(data.productionRuns ?? [], today).map((p) => ({
     id: p.id, severity: 2, title: p.title, affected: p.run, numbers: p.numbers, rule: p.rule,
-    drill: { desk: 'p', label: 'Open production' }, evidence: 'sufficient', atRisk: 0, actions: [],
+    drill: { desk: 'p', label: 'Production' }, evidence: 'sufficient', atRisk: 0, actions: [],
   }));
-  // cash short comes first; the rest by estimated sales at risk
-  const ranked = [...list, ...rankExceptions([...(state.kind === 'ok' ? state.view.exceptions : []), ...prod])];
-  list.push(...(state.kind === 'ok' ? state.view.exceptions : []), ...prod);
+  const all = [...(state.kind === 'ok' ? state.view.exceptions : []), ...tag, ...prod];
+  const ranked = [...first, ...rankExceptions(all)];
   const top = ranked.slice(0, 3);
+  const more = ranked.length - top.length;
   const currency = state.kind === 'ok' ? state.view.a.currency : 'USD';
-  const more = list.length - top.length;
 
   return (
     <section className="window" aria-labelledby="ex-h">
       <div className="window-head">
-        <h2 id="ex-h" className="wh-title">THIS WEEK: LOOK INTO</h2>
-        <span className="wh-note">{list.length ? `TOP ${top.length} OF ${list.length}` : ''}</span>
+        <h2 id="ex-h" className="wh-title">2 · DO THIS WEEK</h2>
+        <span className="wh-note">{ranked.length ? `TOP ${top.length} OF ${ranked.length} · MOST MONEY AT STAKE FIRST` : ''}</span>
       </div>
       <div className="window-body">
-        {state.kind !== 'ok' && <p className="stat-sub mb-2">PRODUCT AND STOCK CHECKS NEED A SYNC WITH VARIANT-LEVEL DATA; ONLY CASH AND PRODUCTION ARE CHECKED HERE.</p>}
-        {top.length === 0 ? (
-          <p className="font-display text-sm tier-green">NOTHING MET AN EXCEPTION RULE IN THIS PERIOD.</p>
-        ) : (
-          <ol className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            {top.map((e, i) => (
-              <li key={e.id} className="min-w-0 border border-[var(--crt-mid)] p-3">
-                <div className="flex items-start gap-2">
-                  <span className={`font-display ${e.id === 'cash' ? 'tier-red' : e.atRisk > 0 ? 'tier-amber' : 'dim'}`} aria-hidden>{i + 1}.</span>
-                  <h3 className="font-display text-base leading-snug">{e.title}</h3>
-                </div>
-                {e.atRisk > 0 && (
-                  <p className="mt-1 font-display text-sm tier-amber">
-                    ≈ {formatMoney({ currency, minor: e.atRisk })} OF SALES AT RISK IN THE NEXT 4 WEEKS <span className="dim">(ESTIMATE, AT THE RECENT PACE)</span>
-                  </p>
-                )}
-                <ul className="mt-1 space-y-0.5 text-[0.8rem]">
-                  {e.numbers.slice(0, 4).map((n) => <li key={n}>{n}</li>)}
-                  {e.numbers.length > 4 && <li className="dim">+{e.numbers.length - 4} more</li>}
-                </ul>
-                {e.actions.length > 0 && (
-                  <ul className="mt-1 space-y-0.5 text-[0.8rem] warm" aria-label="Reorder timing">
-                    {e.actions.slice(0, 3).map((n) => <li key={n}>→ {n}</li>)}
-                    {e.actions.length > 3 && <li className="dim">+{e.actions.length - 3} more on the inventory page</li>}
-                  </ul>
-                )}
-                <p className="stat-sub mt-1">RULE: {e.rule}</p>
-                {e.evidence === 'insufficient' && <p className="stat-sub tier-amber">EVIDENCE IS THIN — TREAT AS A QUESTION, NOT A CONCLUSION.</p>}
-                <button onClick={() => setDesk(e.drill.desk as DeskKey)} className="tap mt-2 border border-[var(--crt-line)] px-2 py-0.5 font-display text-sm">
-                  {e.drill.label.toUpperCase()} →
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-        {more > 0 && <p className="stat-sub mt-2">+{more} MORE — SEE INVENTORY AND ALERTS.</p>}
+        {state.kind !== 'ok' && <p className="stat-sub mb-2">PRODUCT AND STOCK CHECKS NEED A SYNC WITH VARIANT-LEVEL DATA; ONLY CASH, DEPOSITS AND PRODUCTION ARE CHECKED HERE.</p>}
+        <ActionList items={top} currency={currency} onDrill={(d) => setDesk(d as DeskKey)} />
+        {more > 0 && <p className="stat-sub mt-2">+{more} MORE — SEE STOCK, PRODUCTION AND ALERTS.</p>}
       </div>
     </section>
   );

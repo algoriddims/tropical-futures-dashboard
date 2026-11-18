@@ -222,6 +222,8 @@ export interface ParkData {
   leadTimeWeeks?: number | null;
   /** Manual: supplier orders with costs, stages, shipments and links (src/game/production.ts). */
   productionRuns?: ProductionRun[];
+  /** Manual: Shopify product ids the owner marked Timeless (re-released designs that don't age). */
+  timelessProducts?: string[];
   /** Normalized Shopify analytics records (variant grain, minor units) — see src/analytics/types.ts. */
   analytics?: AnalyticsSnapshot;
   grossMargin: number;

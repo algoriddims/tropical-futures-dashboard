@@ -6,7 +6,7 @@ export const DESKS: { key: DeskKey; label: string; title: string }[] = [
   { key: 's', label: 'OVERVIEW', title: 'OVERVIEW' },
   { key: 'p', label: 'PRODUCTION', title: 'PRODUCTION' },
   { key: 'g', label: 'PLANNING', title: 'PLANNING' },
-  { key: 'i', label: 'INVENTORY', title: 'INVENTORY' },
+  { key: 'i', label: 'STOCK', title: 'STOCK' },
   { key: 'l', label: 'SHOPS', title: 'SHOPS' },
   { key: 'c', label: 'COSTS', title: 'COSTS' },
   { key: 'o', label: 'ORDERS', title: 'ORDERS' },

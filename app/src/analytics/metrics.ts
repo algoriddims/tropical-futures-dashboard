@@ -495,7 +495,7 @@ export function reorderAdvice(label: string, r: StockRisk, plan: StockPlan): str
   } else if (r.sellable <= 0) {
     out.push(r.landsIfOrderedNow
       ? `${label}: out of stock now — an order placed today lands around ${shortDay(r.landsIfOrderedNow)} (${plan.leadTimeWeeks}-week lead time)`
-      : `${label}: out of stock now — set a lead time on the inventory page to see when a new order would land`);
+      : `${label}: out of stock now — set a lead time on the Stock page to see when a new order would land`);
   } else if (r.reorderBy && r.landsIfOrderedNow) {
     const wk = `${plan.leadTimeWeeks}-week lead time`;
     if (r.reorderBy <= r.asOf) {
@@ -505,7 +505,7 @@ export function reorderAdvice(label: string, r: StockRisk, plan: StockPlan): str
       out.push(`${label}: reorder by ${shortDay(r.reorderBy)} to land before stock runs out around ${shortDay(r.runsOutOn)} (${wk})`);
     }
   } else {
-    out.push(`${label}: stock runs out around ${shortDay(r.runsOutOn)} at this pace — set a lead time on the inventory page for a reorder-by date`);
+    out.push(`${label}: stock runs out around ${shortDay(r.runsOutOn)} at this pace — set a lead time on the Stock page for a reorder-by date`);
   }
   for (const a of r.overdue) out.push(`${label}: ${u(a.units)} were expected ${shortDay(a.expectedDate)} — not counted; if they arrived, remove the entry`);
   for (const a of r.unallocated) out.push(`${u(a.units)} expected ${shortDay(a.expectedDate)} with no size given — not counted for ${label}`);
@@ -552,7 +552,7 @@ export function buildExceptions(s: AnalyticsSnapshot, cmp: Comparison, products:
         affected: p.title,
         numbers: outSelling.map((v) => `${v.size ?? v.variant.variantTitle}: ${v.cover.unitsInWindow} sold in the last 28 days, ${v.stock.available} available${v.stock.oversold ? ` (oversold by ${v.stock.oversold})` : ''}`),
         rule: 'A variant sold in the last 28 complete days and now has no sellable stock.',
-        drill: { desk: 'i', label: 'Open inventory' },
+        drill: { desk: 'i', label: 'Stock' },
         evidence: 'sufficient',
         atRisk: rs.reduce((n, x) => n + (x.r?.atRisk ?? 0), 0),
         actions: uniq(rs.flatMap((x) => (x.r ? reorderAdvice(name(x.v), x.r, plan) : []))),
@@ -570,7 +570,7 @@ export function buildExceptions(s: AnalyticsSnapshot, cmp: Comparison, products:
         affected: p.title,
         numbers: low.map(({ v }) => `${v.size ?? v.variant.variantTitle}: ${v.stock.sellable} available, ${v.cover.unitsInWindow} sold in 28 days ≈ ${(v.cover.cover as { weeks: number }).weeks.toFixed(1)} weeks (estimate)`),
         rule: `Weeks of cover < ${cfg.lowCoverWeeks} (a heuristic) with ≥ ${cfg.minUnitsForCover} units sold in 28 days, and stock on the way doesn't close the gap.`,
-        drill: { desk: 'i', label: 'Open inventory' },
+        drill: { desk: 'i', label: 'Stock' },
         evidence: 'sufficient',
         atRisk: low.reduce((n, x) => n + (x.r?.atRisk ?? 0), 0),
         actions: uniq(low.flatMap((x) => (x.r ? reorderAdvice(name(x.v), x.r, plan) : []))),

@@ -16,6 +16,8 @@ export interface AnalyticsView {
   prior: M.PeriodTotals;
   products: M.ProductPerf[];
   exceptions: M.Exception[];
+  /** Lead time and stock on the way (owner entries + linked production runs) used by the stock checks. */
+  plan: StockPlan;
 }
 
 export type AnalyticsState =
@@ -48,6 +50,7 @@ export function useAnalytics(): AnalyticsState {
         prior: M.periodTotals(a, cmp.prior, channelFilter),
         products,
         exceptions: M.buildExceptions(a, cmp, stockProducts, M.DEFAULT_EXCEPTION_CONFIG, undefined, plan),
+        plan,
       },
     };
   }, [a, range, channelFilter, plan]);

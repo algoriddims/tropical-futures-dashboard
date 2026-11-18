@@ -108,13 +108,24 @@ Comparisons: absolute change for money and units; percentage-point change for pe
 ## Reorder-by date
 
 - **Formula:** run-out day − lead time, where run-out day = inventory-read day + ⌊sellable ÷ daily pace⌋ + 1. If that date has passed: "order now", with the days without stock = landing day − run-out day.
-- **Requires:** The owner's lead time in weeks (typed in on the inventory page). Without it no date is shown.
+- **Requires:** The owner's lead time in weeks (typed in on the Stock page). Without it no date is shown.
 - **Eligible records:** Variants raised in the "look into" list that have no dated stock on the way.
 - **Time basis:** Calendar days from the inventory read, business timezone.
 - **Refunds:** —
 - **Currency:** —
 - **Exclusions:** Not shown when dated stock is on the way; the gap before it arrives is shown instead.
 - **Limitations:** One lead time for every product. No safety stock or minimum order. Uses observed pace, as weeks of cover does.
+
+## Stock age band
+
+- **Formula:** Days from the product's webstore publish date to the inventory-read day. Under 180 = New; 180–269 = Aged; 270–359 = Last call; 360 or more = Archive (sample sale). Products the owner marks Timeless never age. Shares are of sellable units, of units × recorded unit cost, and of net sales in the 90 complete days before the stock read.
+- **Requires:** Shopify publishedAt for the online store; the owner's Timeless list (typed in on the Stock page).
+- **Eligible records:** Tracked, non-bundle products with sellable stock (sales shares also count products sold out now).
+- **Time basis:** Calendar days, business timezone.
+- **Refunds:** Sales shares use net sales (returns deducted).
+- **Currency:** Shop currency, minor units.
+- **Exclusions:** Products never published to the online store are "not on the webstore", age unknown — not new. Units with no recorded cost are counted in units but not valued.
+- **Limitations:** The age of the design on the webstore, not of the units on the shelf: a restock doesn't reset it, re-publishing in Shopify does. Shopify records no receipt dates.
 
 ## Returning-customer share (DTC)
 

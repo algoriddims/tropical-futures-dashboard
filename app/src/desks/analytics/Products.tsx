@@ -168,7 +168,7 @@ export function ProductTable({ v, limit }: { v: AnalyticsView; limit?: number })
           })}
         </tbody>
       </table>
-      {limit && rows.length > limit && <p className="stat-sub mt-1">SHOWING {limit} OF {rows.length} PRODUCTS — ALL IN INVENTORY (I).</p>}
+      {limit && rows.length > limit && <p className="stat-sub mt-1">SHOWING {limit} OF {rows.length} PRODUCTS — ALL ON THE STOCK PAGE (I).</p>}
       <p className="stat-sub mt-1">* SOME REVENUE HAS NO RECORDED COST; MARGIN IS ON THE COSTED PART. UNITS ARE NET OF RETURNS. STOCK AND COVER ARE AS OF THE INVENTORY READ, ALL CHANNELS.</p>
     </div>
   );
