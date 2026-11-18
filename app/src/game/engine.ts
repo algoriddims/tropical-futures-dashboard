@@ -3,6 +3,7 @@
 // can be tuned without touching UI.
 
 import { runCashDue } from './production';
+import { cashPlan, cashVerdict, ymLabel } from './cashPlan';
 import type { ParkData, Product, Notice, Campaign, PipelineItem, Channel, CostItem, CostCategory, Tier, RideState, DayPoint, CashMonth } from './types';
 import { money, plural } from './format';
 
@@ -648,10 +649,14 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
         : `Net of the card, cash is ${money(cash, { cents: true })}.`, 'c');
   }
 
-  // cost / runway rules
+  // cost / runway rules — with synced bank months, one answer from the cash plan
+  const plan = cashPlan(d);
   const runway = runwayMonths(d);
   const burn = monthlyBurn(d);
-  if (runway === null) {
+  if (plan) {
+    const v = cashVerdict(plan);
+    if (v.tone !== 'green' && !(cash !== null && cash < 0)) push(v.tone, 'BUSINESS', v.title, v.detail, 'c');
+  } else if (runway === null) {
     if (burn > 0) push('amber', 'BUSINESS', 'CASH POSITION UNKNOWN', `Monthly burn ${money(burn)}, but no bank balance: sync the bank or enter it on the costs desk.`, 'c');
   } else if (runway === 0 && cash !== null && cash < 0) {
     // the overdrawn / card notices above already say it; no second "0.0 months"
@@ -666,9 +671,11 @@ export function buildNotices(d: ParkData, m: Metrics): Notice[] {
     push('green', 'BUSINESS', `PAUSED SUBSCRIPTION: ${s.name}`, `Would add ${money(s.amount)}/mo if reactivated.`, 'c');
   }
 
-  // forward cash-flow — baseline = trailing 30d revenue
+  // forward cash-flow — baseline = trailing 30d revenue (only without synced bank months; the plan above covers it)
   const fv = forecastVerdict(forecastCashflow(d, trailing30dRevenue(d), 6));
-  if (fv.tone === 'red') {
+  if (plan) {
+    // said once, above
+  } else if (fv.tone === 'red') {
     push('red', 'BUSINESS', `CASH FORECAST: ${fv.text}`, 'Net cash (bank minus card), then 30-day sales pace in, monthly burn out, plus committed production.', 'c');
   } else if (fv.tone === 'amber' && runway !== null) {
     push('amber', 'BUSINESS', `CASH FORECAST: ${fv.text}`, 'No negative month, but cash takes a real dip. Time the next run carefully.', 'c');
@@ -735,8 +742,14 @@ export function buildMoves(d: ParkData, m: Metrics, monthlyRevenue: number): Mov
         `${money(fc[0].opening)} net of ${owed ? `the ${money(owed)} card balance` : 'debts'}; overdraft fees keep landing until it's back above zero — ${lever}`,
         Math.abs(Math.round(fc[0].opening)), 'c');
     } else {
-      const dip = fc.find((x) => x.closing < 0);
-      if (dip) push('red', `COVER ${dip.label} SHORTFALL`, `cash goes negative at the current sales pace and burn — ${lever}`, Math.abs(Math.round(dip.closing)), 'c');
+      const plan = cashPlan(d);
+      const lowCase = plan?.scenarios[0];
+      if (plan && lowCase) {
+        if (lowCase.runsOutAt !== null) push('red', `COVER ${ymLabel(plan.months[lowCase.runsOutAt])} SHORTFALL`, `at payouts only, cash goes negative — ${lever}`, Math.abs(Math.round(lowCase.closing[lowCase.runsOutAt])), 'c');
+      } else {
+        const dip = fc.find((x) => x.closing < 0);
+        if (dip) push('red', `COVER ${dip.label} SHORTFALL`, `cash goes negative at the current sales pace and burn — ${lever}`, Math.abs(Math.round(dip.closing)), 'c');
+      }
     }
   }
 
@@ -862,9 +875,15 @@ export function buildInsights(d: ParkData, m: Metrics, monthlyRevenue: number): 
   let n = 0;
   const push = (tier: Tier, text: string, detail: string) => out.push({ id: `i${n++}`, tier, text, detail });
 
-  // 1. forecast verdict
-  const fv = forecastVerdict(forecastCashflow(d, monthlyRevenue, 6));
-  push(fv.tone === 'green' ? 'green' : fv.tone, `SIX-MONTH CASH: ${fv.text}`, 'From net cash (bank minus card): 30-day sales pace in, burn + committed runs out, expected pipeline revenue.');
+  // 1. forecast verdict — the bank-basis cash plan when the bank is synced
+  const cash6 = cashPlan(d);
+  if (cash6) {
+    const v = cashVerdict(cash6);
+    push(v.tone, `SIX-MONTH CASH: ${v.title}`, v.detail);
+  } else {
+    const fv = forecastVerdict(forecastCashflow(d, monthlyRevenue, 6));
+    push(fv.tone === 'green' ? 'green' : fv.tone, `SIX-MONTH CASH: ${fv.text}`, 'From net cash (bank minus card): 30-day sales pace in, burn + committed runs out, expected pipeline revenue.');
+  }
 
   // 2. what actually weighs on burn
   const cats = burnByCategory(d).filter((c) => c.category !== 'PRODUCTION');

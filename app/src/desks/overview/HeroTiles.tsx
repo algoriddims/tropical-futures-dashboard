@@ -73,7 +73,7 @@ export function HeroTiles({ an }: { an: AnalyticsState }) {
     const pace = m && goal > 0 ? goalPace(m.counted, goal, through) : null;
     const counted = m?.counted ?? 0;
     moneyTile = (
-      <Tile label={`MONEY IN · ${monthName(through.slice(0, 7))}`} onOpen={() => setDesk('c')} openLabel="COSTS"
+      <Tile label={`MONEY IN · ${monthName(through.slice(0, 7))}`} onOpen={() => setDesk('c')} openLabel="MONEY"
         sub={<>
           {goalEditor}
           {pace && (pace.met ? ' · MET' : pace.neededPerDay === null ? ` · ${money(goal - counted)} SHORT` : ` · NEEDS ${money(pace.neededPerDay)}/DAY`)}
@@ -106,7 +106,7 @@ export function HeroTiles({ an }: { an: AnalyticsState }) {
   // ── 2. cash ──
   const cp = cashPosition(data);
   const cashTile = (
-    <Tile label={synced ? 'CASH ON HAND' : 'BANK BALANCE'} onOpen={() => setDesk('c')} openLabel="COSTS"
+    <Tile label={synced ? 'CASH ON HAND' : 'BANK BALANCE'} onOpen={() => setDesk('c')} openLabel="MONEY"
       sub={cp.cash === null ? 'UNKNOWN — TYPE THE BALANCE, OR SYNC THE BANK'
         : <>{synced ? 'BANK − CARD OWED' : 'TYPED IN'}{cp.due > 0 && <> · <strong className="text-[var(--vhs-white)]">{money(cp.after)}</strong> AFTER {money(cp.due)} STILL DUE ON PRODUCTION</>}
           {cp.dueUnknown > 0 && <> · {plural(cp.dueUnknown, 'COST')} NOT PRICED YET</>}</>}>

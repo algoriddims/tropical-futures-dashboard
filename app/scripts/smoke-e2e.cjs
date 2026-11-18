@@ -236,7 +236,7 @@ const bank = {
   await page.waitForSelector('[aria-modal="true"]', { state: 'detached' });
   await page.keyboard.press('s'); await page.waitForTimeout(200);
   t = await body();
-  check('money-in tile counts payouts and says the rest is untagged', /MONEY IN · [A-Z]+\s+COSTS →\s+\$200\s+AT LEAST/.test(t) && t.includes('+$500 NOT TAGGED'));
+  check('money-in tile counts payouts and says the rest is untagged', /MONEY IN · [A-Z]+\s+MONEY →\s+\$200\s+AT LEAST/.test(t) && t.includes('+$500 NOT TAGGED'));
   check('tagging the deposit is an action this week', t.includes('TAG 1 DEPOSIT ($500)'));
   await openFolds();
   const moneyPanel = async () => (await page.locator('section[aria-labelledby="mio-h"]').innerText()).toUpperCase();
@@ -299,7 +299,11 @@ const bank = {
   await page.keyboard.press('s'); await page.waitForTimeout(200);
   check('a payment due this week is in the look-into list', (await body()).includes('SMOKE CAP RUN: A PAYMENT IS DUE'));
   await page.keyboard.press('c'); await page.waitForTimeout(200);
-  check('the unpaid cost is in the cash forecast', (await body()).includes('SMOKE CAP RUN: GREY CAPS DUE'));
+  t = await body();
+  check('the unpaid cost is in the cash forecast', /PRODUCTION STILL OWED: SMOKE CAP RUN −\$[\d,]+/.test(t));
+  check('money desk reads in four tiers with one cash answer', t.includes('1 · WHERE CASH STANDS') && t.includes('CASH OUTLOOK') && t.includes('A TYPICAL MONTH') && /AT PAYOUTS ONLY|CASH HOLDS FOR/.test(t) && !/RUNWAY \d|SELF-FUNDING/.test(t));
+  await page.keyboard.press('n'); await page.waitForTimeout(200);
+  check('alerts give the same cash answer, not runway = cash ÷ burn', !/RUNWAY \d|SELF-FUNDING/.test(await body()));
   await page.reload(); await page.waitForSelector('text=1 · WHERE YOU STAND'); await openFolds();
   await page.keyboard.press('p'); await page.waitForTimeout(200);
   check('runs survive a reload', (await page.locator('section[aria-label="Production run SMOKE CAP RUN"]').innerText()).toUpperCase().includes('NEXT: SAMPLES APPROVED'));

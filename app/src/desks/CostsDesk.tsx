@@ -5,6 +5,8 @@ import { AccountLines, CashFlowTable } from '@/components/BankAccounts';
 import { DepositTagging, RecurringCharges } from './money/MoneyPanels';
 import type { CostCategory, CostItem } from '@/game/types';
 import { InlineNumber, InlineText, RowBtn } from '@/components/InlineEdit';
+import { cashPlan } from '@/game/cashPlan';
+import MoneyDesk from './money/MoneyDesk';
 
 const CAT_META: Record<CostCategory, { label: string; tone: string; blurb: string }> = {
   SUBSCRIPTION: { label: 'RECURRING SUBSCRIPTIONS', tone: 'water', blurb: 'MONTHLY TOOLS' },
@@ -54,6 +56,9 @@ function Stat({ label, children, sub, subTone = 'dim' }: { label: string; childr
 export default function CostsDesk() {
   const { data, metrics, updateData } = useTerminal();
   if (!data || !metrics) return null;
+  // with synced bank months there is one forecast, on the bank's basis: the Money desk
+  const plan = cashPlan(data);
+  if (plan) return <MoneyDesk plan={plan} />;
 
   const burn = monthlyBurn(data);
   const oneOffs = oneOffCosts(data);
@@ -61,28 +66,11 @@ export default function CostsDesk() {
   const cash = netCash(data);
   const owed = cardOwed(data);
   const synced = !!data.accounts?.length;
-  const byCat = burnByCategory(data);
-  const totalWithOneOffs = byCat.reduce((s, c) => s + c.monthly, 0);
-  const maxCat = Math.max(...byCat.map((c) => c.monthly), 1);
   const monthlyRevenue = trailing30dRevenue(data); // always the trailing 30d — independent of the viewing range
   const burnVsRevenue = monthlyRevenue > 0 ? (burn / monthlyRevenue) * 100 : null;
   const forecast = forecastCashflow(data, monthlyRevenue, 6);
   const verdict = forecastVerdict(forecast);
   const maxAbs = Math.max(...forecast.map((m) => Math.abs(m.closing)), 1);
-  const noCosts = data.costs.length === 0;
-
-  const patchCost = (id: string, patch: Partial<CostItem>) =>
-    updateData((d) => ({ ...d, costs: d.costs.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
-  const deleteCost = (id: string) =>
-    updateData((d) => ({ ...d, costs: d.costs.filter((c) => c.id !== id) }));
-  const addCost = (category: CostCategory) =>
-    updateData((d) => ({
-      ...d,
-      costs: [
-        ...d.costs,
-        { id: `c${Date.now()}`, name: 'NEW LINE', category, amount: 100, cadence: 'MONTHLY', active: true },
-      ],
-    }));
 
   return (
     <div className="h-full overflow-y-auto p-2 space-y-2">
@@ -230,104 +218,132 @@ export default function CostsDesk() {
         </div>
       </section>
 
+      <CostLines />
+    </div>
+  );
+}
+
+/** The owner's own cost lines (optional when the bank is synced): add, edit, pause, delete. */
+export function CostLines() {
+  const { data, updateData } = useTerminal();
+  if (!data) return null;
+  const synced = !!data.accounts?.length;
+  const noCosts = data.costs.length === 0;
+  const byCat = burnByCategory(data);
+  const totalWithOneOffs = byCat.reduce((s, c) => s + c.monthly, 0);
+  const maxCat = Math.max(...byCat.map((c) => c.monthly), 1);
+  const patchCost = (id: string, patch: Partial<CostItem>) =>
+    updateData((d) => ({ ...d, costs: d.costs.map((c) => (c.id === id ? { ...c, ...patch } : c)) }));
+  const deleteCost = (id: string) =>
+    updateData((d) => ({ ...d, costs: d.costs.filter((c) => c.id !== id) }));
+  const addCost = (category: CostCategory) =>
+    updateData((d) => ({
+      ...d,
+      costs: [
+        ...d.costs,
+        { id: `c${Date.now()}`, name: 'NEW LINE', category, amount: 100, cadence: 'MONTHLY', active: true },
+      ],
+    }));
+  return (
+    <>
       {noCosts ? (
-        <section className="window" aria-label="Cost lines">
-          <div className="window-head">
-            <h2 className="wh-title">COST LINES</h2>
-            <span className="wh-note">NONE ENTERED</span>
+      <section className="window" aria-label="Cost lines">
+        <div className="window-head">
+          <h2 className="wh-title">COST LINES</h2>
+          <span className="wh-note">NONE ENTERED</span>
+        </div>
+        <div className="window-body space-y-2">
+          <p className="stat-sub">
+            {synced
+              ? 'BURN USES ACTUAL BANK + CARD SPENDING (ABOVE). ADD COST LINES ONLY IF YOU WANT TO PLAN FROM YOUR OWN NUMBERS INSTEAD — ONCE ANY RECURRING LINE EXISTS, BURN USES YOUR LINES.'
+              : 'ADD YOUR RECURRING COSTS SO BURN AND RUNWAY MEAN SOMETHING.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(CAT_META) as CostCategory[]).map((cat) => (
+              <RowBtn key={cat} onClick={() => addCost(cat)} tone="phosphor" title={`ADD ${CAT_META[cat].label}`}>+ {CAT_META[cat].label}</RowBtn>
+            ))}
           </div>
-          <div className="window-body space-y-2">
-            <p className="stat-sub">
-              {synced
-                ? 'BURN USES ACTUAL BANK + CARD SPENDING (ABOVE). ADD COST LINES ONLY IF YOU WANT TO PLAN FROM YOUR OWN NUMBERS INSTEAD — ONCE ANY RECURRING LINE EXISTS, BURN USES YOUR LINES.'
-                : 'ADD YOUR RECURRING COSTS SO BURN AND RUNWAY MEAN SOMETHING.'}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {(Object.keys(CAT_META) as CostCategory[]).map((cat) => (
-                <RowBtn key={cat} onClick={() => addCost(cat)} tone="phosphor" title={`ADD ${CAT_META[cat].label}`}>+ {CAT_META[cat].label}</RowBtn>
+        </div>
+      </section>
+    ) : (
+      <>
+        {/* category split bar */}
+        <section className="window" aria-label="Where the money goes">
+          <div className="window-head">
+            <h2 className="wh-title">WHERE THE MONEY GOES</h2>
+            <span className="wh-note">{money(totalWithOneOffs)} TOTAL THIS MONTH</span>
+          </div>
+          <div className="window-body">
+            <div className="flex h-5 w-full border border-[var(--crt-line)]">
+              {byCat.map((c) => (
+                <div
+                  key={c.category}
+                  className="h-full"
+                  style={{
+                    width: `${(c.monthly / (totalWithOneOffs || 1)) * 100}%`,
+                    background: CAT_META[c.category].tone === 'water' ? 'var(--water)'
+                      : CAT_META[c.category].tone === 'tropic-pink' ? 'var(--tropic-pink)'
+                      : CAT_META[c.category].tone === 'sun' ? 'var(--sun)' : 'var(--vhs-dim)',
+                    opacity: 0.85,
+                  }}
+                  title={`${CAT_META[c.category].label} ${money(c.monthly)}`}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-4 font-display text-sm">
+              {byCat.map((c) => (
+                <span key={c.category} className={CAT_META[c.category].tone}>
+                  ■ {c.category} {money(c.monthly)}
+                  <span className="dim"> · {pct((c.monthly / (totalWithOneOffs || 1)) * 100)}</span>
+                </span>
+              ))}
+            </div>
+            <div className="mt-3 space-y-1.5">
+              {byCat.map((c) => (
+                <div key={c.category} className="flex items-center gap-2">
+                  <span className="stat-label w-28 shrink-0">{c.category}</span>
+                  <div className="h-1.5 flex-1 bg-[var(--crt-mid)]">
+                    <div className="h-full bg-[var(--tropic-pink)]" style={{ width: `${(c.monthly / maxCat) * 100}%` }} />
+                  </div>
+                  <span className="font-display text-sm warm w-20 text-right">{money(c.monthly)}</span>
+                </div>
               ))}
             </div>
           </div>
         </section>
-      ) : (
-        <>
-          {/* category split bar */}
-          <section className="window" aria-label="Where the money goes">
-            <div className="window-head">
-              <h2 className="wh-title">WHERE THE MONEY GOES</h2>
-              <span className="wh-note">{money(totalWithOneOffs)} TOTAL THIS MONTH</span>
-            </div>
-            <div className="window-body">
-              <div className="flex h-5 w-full border border-[var(--crt-line)]">
-                {byCat.map((c) => (
-                  <div
-                    key={c.category}
-                    className="h-full"
-                    style={{
-                      width: `${(c.monthly / (totalWithOneOffs || 1)) * 100}%`,
-                      background: CAT_META[c.category].tone === 'water' ? 'var(--water)'
-                        : CAT_META[c.category].tone === 'tropic-pink' ? 'var(--tropic-pink)'
-                        : CAT_META[c.category].tone === 'sun' ? 'var(--sun)' : 'var(--vhs-dim)',
-                      opacity: 0.85,
-                    }}
-                    title={`${CAT_META[c.category].label} ${money(c.monthly)}`}
-                  />
-                ))}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-4 font-display text-sm">
-                {byCat.map((c) => (
-                  <span key={c.category} className={CAT_META[c.category].tone}>
-                    ■ {c.category} {money(c.monthly)}
-                    <span className="dim"> · {pct((c.monthly / (totalWithOneOffs || 1)) * 100)}</span>
-                  </span>
-                ))}
-              </div>
-              <div className="mt-3 space-y-1.5">
-                {byCat.map((c) => (
-                  <div key={c.category} className="flex items-center gap-2">
-                    <span className="stat-label w-28 shrink-0">{c.category}</span>
-                    <div className="h-1.5 flex-1 bg-[var(--crt-mid)]">
-                      <div className="h-full bg-[var(--tropic-pink)]" style={{ width: `${(c.monthly / maxCat) * 100}%` }} />
-                    </div>
-                    <span className="font-display text-sm warm w-20 text-right">{money(c.monthly)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
 
-          {/* category windows */}
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {(Object.keys(CAT_META) as CostCategory[]).map((cat) => {
-              const items = data.costs.filter((c) => c.category === cat);
-              const total = items.reduce((s, c) => s + (c.cadence === 'ONE-OFF' ? (c.active ? c.amount : 0) : monthlyAmount(c)), 0);
-              return (
-                <section key={cat} className="window" aria-label={CAT_META[cat].label}>
-                  <div className="window-head">
-                    <h2 className="wh-title">{CAT_META[cat].label}</h2>
-                    <span className={`font-display text-base ${CAT_META[cat].tone}`}>{money(total)}/MO</span>
-                  </div>
-                  <div>
-                    {items.map((c) => (
-                      <CostRow
-                        key={c.id}
-                        c={c}
-                        onChange={(patch) => patchCost(c.id, patch)}
-                        onDelete={() => deleteCost(c.id)}
-                      />
-                    ))}
-                    {items.length === 0 && <div className="px-3 py-2 stat-sub">NONE — ADD A LINE</div>}
-                  </div>
-                  <div className="flex items-center justify-between border-t border-[var(--crt-mid)] px-3 py-1">
-                    <span className="stat-sub">{CAT_META[cat].blurb} · {plural(items.filter((i) => i.active).length, 'ACTIVE LINE')}</span>
-                    <RowBtn onClick={() => addCost(cat)} tone="phosphor" title="ADD A COST LINE">+ ADD</RowBtn>
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
+        {/* category windows */}
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {(Object.keys(CAT_META) as CostCategory[]).map((cat) => {
+            const items = data.costs.filter((c) => c.category === cat);
+            const total = items.reduce((s, c) => s + (c.cadence === 'ONE-OFF' ? (c.active ? c.amount : 0) : monthlyAmount(c)), 0);
+            return (
+              <section key={cat} className="window" aria-label={CAT_META[cat].label}>
+                <div className="window-head">
+                  <h2 className="wh-title">{CAT_META[cat].label}</h2>
+                  <span className={`font-display text-base ${CAT_META[cat].tone}`}>{money(total)}/MO</span>
+                </div>
+                <div>
+                  {items.map((c) => (
+                    <CostRow
+                      key={c.id}
+                      c={c}
+                      onChange={(patch) => patchCost(c.id, patch)}
+                      onDelete={() => deleteCost(c.id)}
+                    />
+                  ))}
+                  {items.length === 0 && <div className="px-3 py-2 stat-sub">NONE — ADD A LINE</div>}
+                </div>
+                <div className="flex items-center justify-between border-t border-[var(--crt-mid)] px-3 py-1">
+                  <span className="stat-sub">{CAT_META[cat].blurb} · {plural(items.filter((i) => i.active).length, 'ACTIVE LINE')}</span>
+                  <RowBtn onClick={() => addCost(cat)} tone="phosphor" title="ADD A COST LINE">+ ADD</RowBtn>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      </>
+    )}
+    </>
   );
 }

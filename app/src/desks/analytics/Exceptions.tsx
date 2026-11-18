@@ -27,7 +27,7 @@ export function ExceptionsPanel({ state }: { state: AnalyticsState }) {
       id: 'cash', severity: 1, title: 'Cash on hand is below zero', affected: 'Business bank + card',
       numbers: [`Bank ${money(data.bankBalance, { cents: true })}`, ...(owed ? [`Card owes ${money(owed, { cents: true })}`] : []), `Net ${money(cash, { cents: true })}`],
       rule: 'Synced checking + savings minus the synced card balance is negative.',
-      drill: { desk: 'c', label: 'Costs & cash' }, evidence: 'sufficient', atRisk: 0, actions: [],
+      drill: { desk: 'c', label: 'Money' }, evidence: 'sufficient', atRisk: 0, actions: [],
     });
   }
   const tz = state.kind === 'ok' ? state.view.a.timezone ?? 'America/New_York' : 'America/New_York';
@@ -48,7 +48,7 @@ export function ExceptionsPanel({ state }: { state: AnalyticsState }) {
       affected: 'Money in',
       numbers: waiting.slice(0, 3).map((x) => `${x.date}: ${money(x.amount, { cents: true })} — ${x.label}${x.memo ? ` "${x.memo}"` : ''}`),
       rule: 'Deposits that aren\'t Shopify or PayPal payouts count toward the goal only once tagged as stockist or client money.',
-      drill: { desk: 'c', label: 'Costs' }, evidence: 'sufficient', atRisk: 0,
+      drill: { desk: 'c', label: 'Money' }, evidence: 'sufficient', atRisk: 0,
       actions: [(() => { const big = [...waiting].sort((a, b) => b.amount - a.amount)[0]; return `Biggest: ${money(big.amount)} on ${big.date} (${big.label}). Stockist or client money counts toward the goal; your own doesn't`; })()],
     });
   }

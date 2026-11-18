@@ -4,8 +4,10 @@ import { formatMoney } from '@/analytics/money';
 // A ranked list of things to do. Every row's bar is on one scale, so a short
 // bar is a small problem; the supporting numbers and the rule that fired sit
 // behind "why". Used by the overview and the Stock desk.
-export function ActionList({ items, currency, onDrill, hideDrillTo, empty = 'NOTHING NEEDS YOU THIS WEEK.' }: {
+export function ActionList({ items, currency, onDrill, hideDrillTo, empty = 'NOTHING NEEDS YOU THIS WEEK.', sideNote }: {
   items: Exception[]; currency: string; onDrill: (desk: string) => void; hideDrillTo?: string; empty?: string;
+  /** For lists whose amounts aren't sales at risk (e.g. money owed): a text label instead of the shared-scale bar. */
+  sideNote?: (e: Exception) => string;
 }) {
   if (!items.length) return <p className="font-display text-sm tier-green">{empty}</p>;
   const maxRisk = Math.max(...items.map((e) => e.atRisk), 1);
@@ -38,7 +40,9 @@ export function ActionList({ items, currency, onDrill, hideDrillTo, empty = 'NOT
             </details>
           </div>
           <div className="col-start-2 md:col-start-auto">
-            {e.atRisk > 0 ? (
+            {e.atRisk > 0 && sideNote ? (
+              <div className="stat-sub">{sideNote(e)}</div>
+            ) : e.atRisk > 0 ? (
               <>
                 <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-3 w-full" role="img" aria-label={`About ${formatMoney({ currency, minor: e.atRisk })} of sales at risk`}>
                   <rect x="0" y="0" width={Math.max(2, (e.atRisk / maxRisk) * 100)} height="10" rx="2" fill="var(--phase-2)" />

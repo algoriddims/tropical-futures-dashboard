@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTerminal } from '@/terminal/useTerminal';
+import { cashPlan, ymLabel } from '@/game/cashPlan';
 import type { DeskKey } from '@/terminal/desks';
 import {
   monthlyBurn, runwayMonths, daysUntil, burnSource,
@@ -76,6 +77,7 @@ export default function StatusDesk() {
   const owed = cardOwed(data);
   const burn = monthlyBurn(data);
   const runway = runwayMonths(data);
+  const cplan = cashPlan(data);
   const readyBuilds = data.pipeline.filter((p) => p.status === 'READY').length;
   const dropDays = data.nextDrop ? daysUntil(data.nextDrop.date) : null;
   const dropRetail = data.pipeline
@@ -152,23 +154,34 @@ export default function StatusDesk() {
           </div>
         </Fold>
       )}
-      <Fold id="more" title="BURN & RUNWAY · TRAFFIC · ADS · PRODUCTION · GOALS">
+      <Fold id="more" title="CASH OUTLOOK · TRAFFIC · ADS · PRODUCTION · GOALS">
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-        <Window title="BURN & RUNWAY" right={<Jump to="c" />}>
+        <Window title={cplan ? 'CASH OUTLOOK' : 'BURN & RUNWAY'} right={<Jump to="c" />}>
+          {cplan ? (
+            <div className="grid grid-cols-2 gap-3">
+              <BigStat label="MONEY OUT / MONTH" value={money(cplan.moneyOut.monthly)} tone="tier-red"
+                sub={cplan.moneyOut.source === 'COST_LINES' ? 'YOUR COST LINES' : 'RUNNING COSTS · 3-MO AVG · PRODUCTION FROM RUNS'} />
+              <BigStat label={`CASH BY ${ymLabel(cplan.months[cplan.months.length - 1])}`}
+                value={money(cplan.scenarios[0].closing[cplan.scenarios[0].closing.length - 1])}
+                tone={cplan.scenarios[0].runsOutAt !== null ? 'tier-red' : 'dim'}
+                sub={`AT PAYOUTS ONLY · ${money(cplan.scenarios[2].closing[cplan.scenarios[2].closing.length - 1])} AT THE RECENT SALES PACE`} />
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3">
-            <BigStat
-              label="MONTHLY BURN"
-              value={burn > 0 ? money(burn) : '—'}
-              tone={burn > 0 ? 'tier-red' : 'dim'}
-              sub={burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : burnSource(data) === 'COST_LINES' ? 'YOUR COST LINES' : 'NO COSTS OR SPENDING DATA'}
-            />
-            <BigStat
-              label="RUNWAY"
-              value={runway === null ? '—' : cash !== null && cash < 0 ? 'SHORT' : runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
-              tone={runway === null ? 'dim' : runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}
-              sub={runway === null ? 'CASH UNKNOWN' : cash !== null && cash < 0 ? `${money(cash)} NET OF CARD` : 'NET CASH ÷ SPENDING'}
-            />
-          </div>
+              <BigStat
+                label="MONTHLY BURN"
+                value={burn > 0 ? money(burn) : '—'}
+                tone={burn > 0 ? 'tier-red' : 'dim'}
+                sub={burnSource(data) === 'ACTUAL_SPEND' ? 'ACTUAL SPEND · 3-MO AVG' : burnSource(data) === 'COST_LINES' ? 'YOUR COST LINES' : 'NO COSTS OR SPENDING DATA'}
+              />
+              <BigStat
+                label="RUNWAY"
+                value={runway === null ? '—' : cash !== null && cash < 0 ? 'SHORT' : runway === Infinity ? '∞' : `${runway.toFixed(1)} MO`}
+                tone={runway === null ? 'dim' : runway < 6 ? 'tier-red' : runway < 12 ? 'tier-amber' : 'palm'}
+                sub={runway === null ? 'CASH UNKNOWN' : cash !== null && cash < 0 ? `${money(cash)} NET OF CARD` : 'NET CASH ÷ SPENDING'}
+              />
+            </div>
+          )}
           {synced && (
             <details className="mt-2">
               <summary className="stat-sub cursor-pointer">ACCOUNTS{owed ? ` · CARD OWES ${money(owed, { cents: true })}` : ''}</summary>
