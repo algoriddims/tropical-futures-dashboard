@@ -103,7 +103,7 @@ export function AgeChart({ age, currency }: { age: StockAge | null; currency: st
           const rows = age.rows.filter((r) => r.band === b.band);
           const isArchive = b.band === 'ARCHIVE';
           return (
-            <details key={b.band} className="border-t border-[var(--crt-mid)] pt-1" open={isArchive}>
+            <details key={b.band} className="border-t border-[var(--crt-mid)] pt-1">
               <summary className="cursor-pointer text-[0.8rem]">
                 <span aria-hidden className="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm align-middle" style={{ background: BAND_COLOR[b.band] }} />
                 <span className="font-display">{isArchive ? 'SAMPLE SALE LIST' : BAND_LABEL[b.band]}</span>

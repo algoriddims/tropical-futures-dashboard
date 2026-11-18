@@ -33,3 +33,24 @@ export function pct(n: number | null | undefined, digits = 0, signed = false): s
   const sign = v < 0 ? '−' : signed && v > 0 ? '+' : '';
   return `${sign}${Math.abs(v).toFixed(digits)}%`;
 }
+
+/**
+ * Shorten a long name from the middle so both ends stay readable:
+ * "Thinking Like an Archipelago Cap in Ivy" → "Thinking Like an…Cap in Ivy".
+ * Product names often differ only at the end (colour), so plain truncation
+ * makes several rows look the same.
+ */
+export function shortName(name: string, max = 30): string {
+  const t = name.trim().replace(/\s+/g, ' ');
+  if (t.length <= max) return t;
+  const words = t.split(' ');
+  // whole words from the end (up to half the room), then whole words from the start
+  let tail = words[words.length - 1];
+  for (let i = words.length - 2; i > 0 && `${words[i]} ${tail}`.length <= Math.floor(max / 2); i--) tail = `${words[i]} ${tail}`;
+  const room = max - 1 - tail.length;
+  let head = '';
+  for (const w of words) { const next = head ? `${head} ${w}` : w; if (next.length > room) break; head = next; }
+  if (!head) head = t.slice(0, Math.max(1, room));
+  if (tail.length > max - 2) return `${t.slice(0, max - 1)}…`;
+  return `${head}…${tail}`;
+}

@@ -12,7 +12,7 @@ import { BAND_COLOR, BAND_LABEL } from './bands';
 import { splitBySales } from '@/analytics/stock';
 import { suggestedLeadWeeks } from '@/game/production';
 import { InlineNumber } from '@/components/InlineEdit';
-import { plural } from '@/game/format';
+import { plural, shortName } from '@/game/format';
 
 const day = (d: Ymd) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).toUpperCase();
 const dayYear = (d: Ymd, ref: Ymd | null) => (ref && d.slice(0, 4) !== ref.slice(0, 4) ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).toUpperCase() : day(d));
@@ -111,7 +111,7 @@ export function RunwayChart({ r, currency }: { r: Runway | null; currency: strin
             return (
               <div role="row" key={x.key} className="grid grid-cols-1 gap-x-3 gap-y-0.5 border-t border-[var(--crt-mid)] py-1.5 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_10rem] sm:items-center">
                 <span role="rowheader" className="min-w-0">
-                  <span className="block truncate warm" title={label}>{x.product}</span>
+                  <span className="block truncate warm" title={label}>{shortName(x.product, 34)}</span>
                   <span className="stat-sub">{x.variant && <strong className="text-[var(--vhs-white)]">{x.variant.toUpperCase()} · </strong>}{x.sellable} LEFT · ~{perWeek(x.dailyPace)} A WEEK</span>
                 </span>
                 <span role="cell" className="min-w-0">
@@ -250,7 +250,7 @@ export function ShelfChart({ v, currency, colors, locations }: { v: ShelfValue; 
             return (
               <li key={r.productId} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
                 <span className="min-w-0">
-                  <span className="block truncate" title={r.title}>{r.title}</span>
+                  <span className="block truncate" title={r.title}>{shortName(r.title)}</span>
                   <span className="stat-sub">{colors?.of(r.productId) ? `${colors.of(r.productId)!.label} · ` : ''}{plural(r.units, 'UNIT')}{idle ? (r.lastSale ? ` · LAST SALE ${dayYear(r.lastSale, v.window?.to ?? null)}` : ' · NO SALE IN 12 MO') : ` · ${r.soldInWindow} SOLD IN 90 D`}</span>
                 </span>
                 <span className="flex items-center gap-2">
