@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnalyticsSnapshot, VariantDailyRow, VariantRecord } from '../types';
 import { lastCompleteDays } from '../period';
 import { productPerformance, stockRisk } from '../metrics';
-import { runway, shelfValue, sizeCurves, splitBySales, stockSegments } from '../stock';
+import { ageBand, runway, shelfValue, sizeCurves, splitBySales, stockAge, stockSegments } from '../stock';
 import { blankRun, suggestedLeadWeeks, unlinkedRunUnits } from '../../game/production';
 import type { ProductionRun } from '../../game/production';
 
@@ -154,5 +154,48 @@ describe('lead time suggestion from production runs', () => {
     const c = { id: 'g', kind: 'GOODS' as const, description: '', units: 50, unitPrice: 5, amount: null, paid: true, date: null, productId: null, variantId: null };
     expect(unlinkedRunUnits([{ ...r, costs: [c, { ...c, id: 'h', productId: 'p1' }] }])).toBe(50);
     expect(unlinkedRunUnits([{ ...r, costs: [c], stages: { ...r.stages, RECEIVED: { planned: null, done: '2026-11-01' } } }])).toBe(0);
+  });
+});
+
+describe('stock age', () => {
+  // published dates: cap 1 Aug 2026 (89 days at the stock read), tee 1 Mar 2026 (242), sarong 15 Nov 2025 (348), hoodie never
+  const aged = (): AnalyticsSnapshot => {
+    const s = fixture();
+    const pub: Record<string, string | null> = { cap: '2026-08-01T12:00:00Z', tee: '2026-03-01T12:00:00Z', sarong: '2025-11-15T12:00:00Z', hood: null };
+    return { ...s, variants: s.variants.map((v) => ({ ...v, productPublishedAt: pub[v.productId] })) };
+  };
+
+  it('bands by days on the webstore: under 180 new, 180 aged, 270 last call, 360 archive', () => {
+    expect([0, 179, 180, 269, 270, 359, 360, 900].map((d) => ageBand(d, false))).toEqual(['NEW', 'NEW', 'AGED', 'AGED', 'LAST_CALL', 'LAST_CALL', 'ARCHIVE', 'ARCHIVE']);
+    expect(ageBand(900, true)).toBe('TIMELESS');
+    expect(ageBand(null, false)).toBe('UNKNOWN');
+  });
+
+  it('ages each product in stock, with the date it moves on and its value', () => {
+    const a = stockAge(aged())!;
+    expect(a.asOf).toBe('2026-10-29');
+    const row = (id: string) => a.rows.find((r) => r.productId === id)!;
+    expect(row('cap')).toMatchObject({ ageDays: 89, band: 'NEW', nextBand: 'AGED', nextBandOn: '2027-01-28', units: 10, atCost: 7000, atRetail: 45000, sales90: 112000 });
+    expect(row('tee')).toMatchObject({ ageDays: 242, band: 'AGED', nextBand: 'LAST_CALL', nextBandOn: '2026-11-26', units: 9, sales90: 16000 });
+    expect(row('sarong')).toMatchObject({ ageDays: 348, band: 'LAST_CALL', nextBand: 'ARCHIVE', nextBandOn: '2026-11-10', sales90: 0, lastSale: '2026-05-01' });
+    expect(row('hood')).toMatchObject({ ageDays: null, band: 'UNKNOWN', nextBandOn: null, unitsNoCost: 2 });
+    expect(a.rows.map((r) => r.productId)).toEqual(['sarong', 'tee', 'cap', 'hood']);
+  });
+
+  it('totals units, cost and 90-day sales per band, and lists what reaches archive within 30 days', () => {
+    const a = stockAge(aged())!;
+    expect(a.bands.map((b) => [b.band, b.units, b.atCost, b.sales90])).toEqual([
+      ['NEW', 10, 7000, 112000], ['AGED', 9, 13500, 16000], ['LAST_CALL', 40, 108000, 0], ['UNKNOWN', 2, 0, 0],
+    ]);
+    expect(a.units).toBe(61);
+    expect(a.sales90).toBe(128000);
+    expect(a.archiveSoon.map((r) => r.productId)).toEqual(['sarong']);
+  });
+
+  it('a timeless product never ages', () => {
+    const a = stockAge(aged(), ['sarong'])!;
+    expect(a.rows.find((r) => r.productId === 'sarong')).toMatchObject({ band: 'TIMELESS', nextBand: null, nextBandOn: null });
+    expect(a.archiveSoon).toEqual([]);
+    expect(a.bands.find((b) => b.band === 'TIMELESS')!.units).toBe(40);
   });
 });

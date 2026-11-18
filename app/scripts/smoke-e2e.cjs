@@ -217,6 +217,10 @@ const bank = {
   check('stock desk reads in four tiers', t.includes('1 · WHERE STOCK STANDS') && t.includes('SALES AT RISK · NEXT 4 WEEKS') && t.includes('WHEN EACH SIZE RUNS OUT') && t.includes('WHICH SIZES SELL') && t.includes('WHERE THE MONEY IN STOCK SITS'));
   check('stock desk lists the stock action without linking to itself', t.includes('SMOKE TEE: S UNAVAILABLE') && !(await page.locator('section[aria-labelledby="st-2"]').innerText()).toUpperCase().includes('STOCK →'));
   await openFolds();
+  const ageCard = page.locator('section[aria-label^="STOCK BY AGE"]');
+  check('stock by age shows shares of units, cost and sales', /UNITS\s+\d/.test((await ageCard.innerText()).toUpperCase()) && (await ageCard.innerText()).toUpperCase().includes('SALES, 90 DAYS'));
+  await ageCard.locator('button:has-text("☆ TIMELESS")').first().click(); await page.waitForTimeout(150);
+  check('a design can be marked Timeless', /TIMELESS\s+RE-RELEASED, DOESN'T AGE\s+1\s/.test((await ageCard.innerText()).toUpperCase()));
   await page.click('button:has-text("SIZE AVAILABILITY")');
   await page.waitForTimeout(150);
   t = await body();

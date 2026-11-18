@@ -4,9 +4,9 @@
 //   MANUAL (terminal)  bankBalance, costs, growthTargetPct, wholesalePct,
 //                      nextDrop, annualBudget, monthlySalesGoal, depositTags,
 //                      vendorMarks, incomingStock, leadTimeWeeks,
-//                      productionRuns — entered by hand, saved on the server
+//                      productionRuns, timelessProducts — entered by hand, saved on the server
 //                      (browser storage is a cache), re-applied over every
-//                      import. The last five come only from the manual store:
+//                      import. The last six come only from the manual store:
 //                      an import can't set them.
 //   SYNC (import)      everything else — products, pipeline, channels, orders,
 //                      campaigns, days, quests, rates, meta. Replaced whole by
@@ -26,7 +26,7 @@ import { syncedCash } from './engine';
 import { validateParkData } from './validate';
 
 export const FIELD_OWNERSHIP = {
-  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal', 'depositTags', 'vendorMarks', 'incomingStock', 'leadTimeWeeks', 'productionRuns'],
+  manual: ['bankBalance', 'costs', 'growthTargetPct', 'wholesalePct', 'nextDrop', 'annualBudget', 'monthlySalesGoal', 'depositTags', 'vendorMarks', 'incomingStock', 'leadTimeWeeks', 'productionRuns', 'timelessProducts'],
   syncWithOverride: ['channels[].stock[].allocated', 'channels[].stock[].sold'],
 } as const;
 
@@ -60,6 +60,8 @@ export interface ManualSlices {
   incomingStock: IncomingStock[];
   leadTimeWeeks: number | null;
   productionRuns: ProductionRun[];
+  /** Product ids marked Timeless: they never age into the sample-sale band. */
+  timelessProducts: string[];
   shelfEdits: ShelfEdit[];
 }
 
@@ -94,6 +96,7 @@ export function applyManual(base: ParkData, m: Partial<ManualSlices>): ParkData 
     leadTimeWeeks: m.leadTimeWeeks ?? null,
     // malformed runs (an old or hand-edited store) are left out rather than half-rendered
     productionRuns: storedRuns(m.productionRuns).runs,
+    timelessProducts: Array.isArray(m.timelessProducts) ? [...new Set(m.timelessProducts.filter((x): x is string => typeof x === 'string'))] : [],
   };
 }
 
@@ -117,6 +120,7 @@ export function extractManual(d: ParkData): Partial<Omit<ManualSlices, 'shelfEdi
     incomingStock: d.incomingStock ?? [],
     leadTimeWeeks: d.leadTimeWeeks ?? null,
     productionRuns: d.productionRuns ?? [],
+    timelessProducts: d.timelessProducts ?? [],
   };
 }
 

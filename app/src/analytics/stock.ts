@@ -232,3 +232,129 @@ export function splitBySales(curve: SizeCurve, units: number): { size: string; u
   for (const x of [...out].sort((a, b) => b.rem - a.rem)) { if (left <= 0) break; x.units += 1; left -= 1; }
   return out.map(({ size, units: u }) => ({ size, units: u }));
 }
+
+// ── stock age: new → aged → last call → archive (sample sale), or timeless ──
+
+export type AgeBand = 'NEW' | 'AGED' | 'LAST_CALL' | 'ARCHIVE' | 'TIMELESS' | 'UNKNOWN';
+
+/** Day thresholds, from the date the product went up on the webstore. */
+export const AGE_BANDS: { band: Exclude<AgeBand, 'TIMELESS' | 'UNKNOWN'>; from: number; label: string; range: string }[] = [
+  { band: 'NEW', from: 0, label: 'New', range: 'under 6 months' },
+  { band: 'AGED', from: 180, label: 'Aged', range: '6–9 months' },
+  { band: 'LAST_CALL', from: 270, label: 'Last call', range: '9–12 months' },
+  { band: 'ARCHIVE', from: 360, label: 'Archive · sample sale', range: '12 months +' },
+];
+export const BAND_ORDER: AgeBand[] = ['NEW', 'AGED', 'LAST_CALL', 'ARCHIVE', 'TIMELESS', 'UNKNOWN'];
+
+export function ageBand(ageDays: number | null, timeless: boolean): AgeBand {
+  if (timeless) return 'TIMELESS';
+  if (ageDays === null) return 'UNKNOWN';
+  let b: AgeBand = 'NEW';
+  for (const x of AGE_BANDS) if (ageDays >= x.from) b = x.band;
+  return b;
+}
+
+export interface AgeRow {
+  productId: string;
+  title: string;
+  /** Webstore publish date (business timezone), null when never published to the online store. */
+  published: Ymd | null;
+  ageDays: number | null;
+  band: AgeBand;
+  units: number;
+  /** Sellable units × unit cost over the units with a recorded cost (minor units). */
+  atCost: number;
+  unitsNoCost: number;
+  /** Sellable units × current price (minor units). */
+  atRetail: number;
+  /** Lowest and highest recorded unit cost / price across the product's variants (minor units). */
+  unitCost: number | null;
+  price: number;
+  /** Net sales (minor units) in the 90 days before the stock read. */
+  sales90: number;
+  lastSale: Ymd | null;
+  /** The day it moves into the next band (null for archive, timeless or unknown). */
+  nextBandOn: Ymd | null;
+  nextBand: AgeBand | null;
+}
+
+export interface BandTotal { band: AgeBand; products: number; units: number; atCost: number; atRetail: number; sales90: number }
+
+export interface StockAge {
+  asOf: Ymd;
+  rows: AgeRow[];
+  bands: BandTotal[];
+  units: number;
+  atCost: number;
+  sales90: number;
+  /** Products that move into the archive band within `soonDays` (still in stock). */
+  archiveSoon: AgeRow[];
+  soonDays: number;
+}
+
+const daysBetween = (a: Ymd, b: Ymd) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
+/**
+ * Age of each product in stock, from its webstore publish date to the stock
+ * read. A restock doesn't reset it and re-publishing does: it is the age of
+ * the design on the webstore, not of the units on the shelf. Timeless
+ * products (marked by the owner) never age. Products with no publish date are
+ * UNKNOWN, not new.
+ */
+export function stockAge(s: AnalyticsSnapshot, timeless: readonly string[] = [], soonDays = 30): StockAge | null {
+  if (!s.timezone) return null;
+  const tz = s.timezone;
+  const asOf = todayIn(tz, new Date(s.inventoryAsOf));
+  const w90 = coverWindow(s, 90);
+  const marked = new Set(timeless);
+  const by = new Map<string, AgeRow>();
+  for (const v of s.variants) {
+    if (v.isBundle || !v.tracked) continue;
+    const n = stockPosition(v).sellable;
+    let row = by.get(v.productId);
+    if (!row) {
+      const published = v.productPublishedAt ? todayIn(tz, new Date(v.productPublishedAt)) : null;
+      const ageDays = published ? Math.max(0, daysBetween(published, asOf)) : null;
+      const band = ageBand(ageDays, marked.has(v.productId));
+      const next = band === 'NEW' || band === 'AGED' || band === 'LAST_CALL' ? AGE_BANDS[AGE_BANDS.findIndex((x) => x.band === band) + 1] : null;
+      row = {
+        productId: v.productId, title: v.productTitle, published, ageDays, band, units: 0, atCost: 0, unitsNoCost: 0, atRetail: 0,
+        unitCost: null, price: v.price, sales90: 0, lastSale: null,
+        nextBandOn: next && published ? addDays(published, next.from) : null, nextBand: next?.band ?? null,
+      };
+      by.set(v.productId, row);
+    }
+    row.units += n;
+    row.atRetail += n * v.price;
+    row.price = Math.max(row.price, v.price);
+    if (v.unitCost === null) row.unitsNoCost += n;
+    else { row.atCost += n * v.unitCost; row.unitCost = Math.max(row.unitCost ?? 0, v.unitCost); }
+  }
+  for (const r of s.variantDaily) {
+    const row = by.get(r.productId);
+    if (!row) continue;
+    if (w90 && inRange(r.date, w90)) row.sales90 += r.netSales;
+    if (r.netItems > 0 && (!w90 || r.date <= w90.to)) row.lastSale = !row.lastSale || r.date > row.lastSale ? r.date : row.lastSale;
+  }
+  const rows = [...by.values()].filter((r) => r.units > 0)
+    .sort((a, b) => (b.ageDays ?? -1) - (a.ageDays ?? -1) || a.title.localeCompare(b.title));
+  // bands in display order; sales share includes products sold out now (their sales still tell which ages sell)
+  const salesBy = new Map<AgeBand, number>();
+  for (const r of by.values()) salesBy.set(r.band, (salesBy.get(r.band) ?? 0) + r.sales90);
+  const bands: BandTotal[] = BAND_ORDER.map((band) => {
+    const xs = rows.filter((r) => r.band === band);
+    return {
+      band, products: xs.length, units: xs.reduce((n, r) => n + r.units, 0), atCost: xs.reduce((n, r) => n + r.atCost, 0),
+      atRetail: xs.reduce((n, r) => n + r.atRetail, 0), sales90: Math.max(0, salesBy.get(band) ?? 0),
+    };
+  }).filter((b) => b.units > 0 || b.sales90 > 0);
+  const soonTo = addDays(asOf, soonDays);
+  return {
+    asOf, rows, bands,
+    units: rows.reduce((n, r) => n + r.units, 0),
+    atCost: rows.reduce((n, r) => n + r.atCost, 0),
+    sales90: bands.reduce((n, b) => n + b.sales90, 0),
+    archiveSoon: rows.filter((r) => r.nextBand === 'ARCHIVE' && r.nextBandOn !== null && r.nextBandOn <= soonTo).sort((a, b) => a.nextBandOn!.localeCompare(b.nextBandOn!)),
+    soonDays,
+  };
+}

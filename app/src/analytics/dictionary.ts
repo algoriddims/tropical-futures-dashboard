@@ -122,6 +122,16 @@ export const METRICS: MetricDef[] = [
     limitations: 'One lead time for every product. No safety stock or minimum order. Uses observed pace, as weeks of cover does.',
   },
   {
+    id: 'stock-age', name: 'Stock age band', status: 'implemented',
+    formula: 'Days from the product\'s webstore publish date to the inventory-read day. Under 180 = New; 180–269 = Aged; 270–359 = Last call; 360 or more = Archive (sample sale). Products the owner marks Timeless never age. Shares are of sellable units, of units × recorded unit cost, and of net sales in the 90 complete days before the stock read.',
+    requires: 'Shopify publishedAt for the online store; the owner\'s Timeless list (typed in on the Stock page).',
+    eligible: 'Tracked, non-bundle products with sellable stock (sales shares also count products sold out now).',
+    timeBasis: 'Calendar days, business timezone.',
+    refunds: 'Sales shares use net sales (returns deducted).', currency: 'Shop currency, minor units.',
+    exclusions: 'Products never published to the online store are "not on the webstore", age unknown — not new. Units with no recorded cost are counted in units but not valued.',
+    limitations: 'The age of the design on the webstore, not of the units on the shelf: a restock doesn\'t reset it, re-publishing in Shopify does. Shopify records no receipt dates.',
+  },
+  {
     id: 'returning-share', name: 'Returning-customer share (DTC)', status: 'implemented',
     formula: 'Online Store customers ordering in the period who ordered before it began ÷ Online Store customers ordering in the period.',
     requires: 'ShopifyQL customers and returning_customers for exactly that period (unique counts can\'t be summed across days).',

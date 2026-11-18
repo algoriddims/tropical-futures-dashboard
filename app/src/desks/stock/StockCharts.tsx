@@ -213,7 +213,10 @@ export function SizeCurveChart({ c }: { c: SizeCurves }) {
 
 // ── shelf value ────────────────────────────────────────────────────────────
 
-export function ShelfChart({ v, currency }: { v: ShelfValue; currency: string }) {
+/** Colour per product by age band; legend entries in band order. */
+export interface ShelfColors { of: (productId: string) => { color: string; label: string } | null; legend: { color: string; label: string }[] }
+
+export function ShelfChart({ v, currency, colors }: { v: ShelfValue; currency: string; colors?: ShelfColors }) {
   const top = v.rows.slice(0, 8);
   const rest = v.rows.slice(8);
   const restCost = rest.reduce((n, r) => n + r.atCost, 0);
@@ -224,8 +227,12 @@ export function ShelfChart({ v, currency }: { v: ShelfValue; currency: string })
     <Card title="WHERE THE MONEY IN STOCK SITS" note={
       <>
         <span className="flex flex-wrap gap-x-4 gap-y-1">
-          <span className="inline-flex items-center gap-1"><Swatch fill="var(--phase-1)" />SOLD IN THE LAST 90 DAYS</span>
-          <span className="inline-flex items-center gap-1"><Swatch fill="var(--phase-2)" />NO SALES IN 90 DAYS</span>
+          {colors
+            ? colors.legend.map((x) => <span key={x.label} className="inline-flex items-center gap-1"><Swatch fill={x.color} />{x.label}</span>)
+            : <>
+              <span className="inline-flex items-center gap-1"><Swatch fill="var(--phase-1)" />SOLD IN THE LAST 90 DAYS</span>
+              <span className="inline-flex items-center gap-1"><Swatch fill="var(--phase-2)" />NO SALES IN 90 DAYS</span>
+            </>}
         </span>
         <span className="block mt-1">
           AT RECORDED UNIT COST, SELLABLE STOCK ONLY. {idleShare > 0 && `${idleShare}% OF IT (${fm(v.idleAtCost)}, ${plural(v.idleUnits, 'UNIT')}) HASN'T SOLD IN 90 DAYS. `}
@@ -241,11 +248,11 @@ export function ShelfChart({ v, currency }: { v: ShelfValue; currency: string })
               <li key={r.productId} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
                 <span className="min-w-0">
                   <span className="block truncate" title={r.title}>{r.title}</span>
-                  <span className="stat-sub">{plural(r.units, 'UNIT')}{idle ? (r.lastSale ? ` · LAST SALE ${dayYear(r.lastSale, v.window?.to ?? null)}` : ' · NO SALE IN 12 MO') : ` · ${r.soldInWindow} SOLD IN 90 D`}</span>
+                  <span className="stat-sub">{colors?.of(r.productId) ? `${colors.of(r.productId)!.label} · ` : ''}{plural(r.units, 'UNIT')}{idle ? (r.lastSale ? ` · LAST SALE ${dayYear(r.lastSale, v.window?.to ?? null)}` : ' · NO SALE IN 12 MO') : ` · ${r.soldInWindow} SOLD IN 90 D`}</span>
                 </span>
                 <span className="flex items-center gap-2">
                   <svg viewBox="0 0 100 10" preserveAspectRatio="none" className="h-3 flex-1" aria-hidden>
-                    <rect x="0" y="0" width={r.atCost > 0 ? Math.max(1.5, (r.atCost / max) * 100) : 0} height="10" rx="2" fill={idle ? 'var(--phase-2)' : 'var(--phase-1)'} />
+                    <rect x="0" y="0" width={r.atCost > 0 ? Math.max(1.5, (r.atCost / max) * 100) : 0} height="10" rx="2" fill={colors?.of(r.productId)?.color ?? (idle ? 'var(--phase-2)' : 'var(--phase-1)')} />
                   </svg>
                   <span className="w-20 shrink-0 text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>{r.atCost > 0 ? fm(r.atCost) : 'NO COST'}{r.unitsNoCost > 0 && r.atCost > 0 ? '*' : ''}</span>
                 </span>

@@ -4,7 +4,10 @@ import { ProductTable, SizeMatrix } from './analytics/Products';
 import { StockPlanPanel } from './analytics/StockPlanPanel';
 import { ChannelFilterControl } from './analytics/Performance';
 import { formatRange } from '@/analytics/period';
-import { runway, shelfValue, sizeCurves } from '@/analytics/stock';
+import { runway, shelfValue, sizeCurves, stockAge, AGE_BANDS } from '@/analytics/stock';
+import type { Exception } from '@/analytics/metrics';
+import { AgeChart } from './stock/StockAge';
+import { BAND_COLOR, BAND_LABEL } from './stock/bands';
 import type { DeskKey } from '@/terminal/desks';
 import { ActionList } from './analytics/ActionList';
 import { Fold } from './overview/OverviewCharts';
@@ -14,6 +17,7 @@ import { useTerminal } from '@/terminal/useTerminal';
 import { rideState, sellThrough, hasSellThrough, daysOfStock } from '@/game/engine';
 import type { Product } from '@/game/types';
 import { money, pct, plural } from '@/game/format';
+import { formatMoney } from '@/analytics/money';
 
 type SortKey = 'revenue' | 'units' | 'stock' | 'sellthrough';
 
@@ -41,19 +45,39 @@ function stateTone(state: string, p: Product): string {
 // analytics (sample data, older syncs): the original list.
 export default function InventoryDesk() {
   const an = useAnalytics();
-  const { setDesk } = useTerminal();
+  const { data, setDesk } = useTerminal();
   const [view, setView] = useState<'products' | 'sizes'>('products');
   const v = an.kind === 'ok' ? an.view : null;
   const r = useMemo(() => (v ? runway(v.a, v.products, v.plan) : null), [v]);
   const curves = useMemo(() => (v ? sizeCurves(v.a) : null), [v]);
   const shelf = useMemo(() => (v ? shelfValue(v.a) : null), [v]);
+  const timeless = data?.timelessProducts;
+  const age = useMemo(() => (v ? stockAge(v.a, timeless ?? []) : null), [v, timeless]);
   if (!v || !curves || !shelf) return <LegacyInventory note={an.kind === 'none' ? undefined : 'BUSINESS TIMEZONE NOT CONFIGURED — PERIOD SALES UNAVAILABLE.'} />;
-  const stock = v.exceptions.filter((e) => e.drill.desk === 'i');
+  const stock: Exception[] = [...v.exceptions.filter((e) => e.drill.desk === 'i')];
+  // designs reaching 12 months on the webstore within 30 days: the sample-sale decision comes up
+  if (age?.archiveSoon.length) {
+    const xs = age.archiveSoon;
+    const cost = xs.reduce((n, x) => n + x.atCost, 0);
+    stock.push({
+      id: 'archive-soon', severity: 3,
+      title: `${xs.length === 1 ? xs[0].title : plural(xs.length, 'design')} reach${xs.length === 1 ? 'es' : ''} 12 months on the webstore by ${new Date(`${xs[xs.length - 1].nextBandOn}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`,
+      affected: xs.map((x) => x.title).join(', '),
+      numbers: xs.map((x) => `${x.title}: ${plural(x.units, 'unit')}, ${x.atCost > 0 ? `${formatMoney({ currency: v.a.currency, minor: x.atCost })} at cost` : 'no cost recorded'}, archive from ${x.nextBandOn}`),
+      rule: `A design moves to archive (sample sale) after ${AGE_BANDS[3].from} days on the webstore, counted from its Shopify publish date. Timeless designs are left out.`,
+      drill: { desk: 'i', label: 'Stock' }, evidence: 'sufficient', atRisk: 0,
+      actions: [`Last call: decide sample sale or storage for ${plural(xs.reduce((n, x) => n + x.units, 0), 'unit')}${cost > 0 ? ` (${formatMoney({ currency: v.a.currency, minor: cost })} at cost)` : ''}${xs.some((x) => x.unitsNoCost > 0) ? ', some with no cost recorded' : ''} — or mark a design Timeless`],
+    });
+  }
+  const shelfColors = age ? {
+    of: (id: string) => { const r = age.rows.find((x) => x.productId === id); return r ? { color: BAND_COLOR[r.band], label: BAND_LABEL[r.band].replace(' · SAMPLE SALE', '') } : null; },
+    legend: age.bands.filter((b) => b.units > 0).map((b) => ({ color: BAND_COLOR[b.band], label: BAND_LABEL[b.band] })),
+  } : undefined;
   return (
     <div className="h-full overflow-y-auto p-2 space-y-3">
       <section aria-labelledby="st-1" className="space-y-2">
         <h2 id="st-1" className="stat-label px-1">1 · WHERE STOCK STANDS <span className="dim">· AS OF {new Date(v.a.inventoryAsOf).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase()}</span></h2>
-        <StockTiles v={v} r={r} shelf={shelf} stock={stock} />
+        <StockTiles v={v} r={r} shelf={shelf} stock={stock} age={age} />
       </section>
 
       <section className="window" aria-labelledby="st-2">
@@ -70,9 +94,10 @@ export default function InventoryDesk() {
       <section aria-labelledby="st-3" className="space-y-2">
         <h2 id="st-3" className="stat-label px-1">3 · WHY</h2>
         <RunwayChart r={r} currency={v.a.currency} />
+        <AgeChart age={age} currency={v.a.currency} />
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           <SizeCurveChart c={curves} />
-          <ShelfChart v={shelf} currency={v.a.currency} />
+          <ShelfChart v={shelf} currency={v.a.currency} colors={shelfColors} />
         </div>
       </section>
 

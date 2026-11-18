@@ -33,6 +33,8 @@
   /* production timeline phases (validated categorical set, dark steps) and status */
   --phase-1: #3987e5; --phase-2: #d95926; --phase-3: #199e70; --on-phase: #ffffff;
   --good: #0ca30c; --critical: #e66767; --timeline-band: rgba(255,255,255,0.06);
+  /* stock age bands: under 6 months · 6–9 · 9–12 · 12+ (sample sale) */
+  --age-new: #2fbf71; --age-aged: #f2c94c; --age-late: #e8803f; --age-archive: #e66767;
   --crt-black: #0a0a0c;
   --crt-dark: #111114;
   --crt-mid: #1a1a1e;
@@ -334,6 +336,7 @@ canvas.pixelated { image-rendering: pixelated; }
   color-scheme: light;
   --phase-1: #2a78d6; --phase-2: #eb6834; --phase-3: #1baf7a; --on-phase: #ffffff;
   --good: #0ca30c; --critical: #d03b3b; --timeline-band: #f0efec;
+  --age-new: #1f9d55; --age-aged: #e0b000; --age-late: #eb6834; --age-archive: #d03b3b;
   --crt-black: #ffffff;          /* page */
   --crt-dark: #ffffff;           /* blocks */
   --crt-mid: #e6e6e6;            /* hairlines */

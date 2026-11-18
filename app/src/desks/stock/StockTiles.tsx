@@ -5,7 +5,8 @@ import type { ReactNode } from 'react';
 import { useTerminal } from '@/terminal/useTerminal';
 import { formatMoney } from '@/analytics/money';
 import type { Exception } from '@/analytics/metrics';
-import type { Runway, ShelfValue } from '@/analytics/stock';
+import type { Runway, ShelfValue, StockAge } from '@/analytics/stock';
+import { BAND_COLOR, BAND_LABEL } from './bands';
 import type { Ymd } from '@/analytics/period';
 import { unlinkedRunUnits } from '@/game/production';
 import { plural } from '@/game/format';
@@ -27,7 +28,7 @@ function Tile({ label, children, sub }: { label: string; children: ReactNode; su
 
 const Big = ({ children, tone = '' }: { children: ReactNode; tone?: string }) => <span className={`font-display text-4xl leading-tight ${tone}`}>{children}</span>;
 
-export function StockTiles({ v, r, shelf, stock }: { v: AnalyticsView; r: Runway | null; shelf: ShelfValue; stock: Exception[] }) {
+export function StockTiles({ v, r, shelf, stock, age }: { v: AnalyticsView; r: Runway | null; shelf: ShelfValue; stock: Exception[]; age: StockAge | null }) {
   const { data } = useTerminal();
   const fm = (minor: number) => formatMoney({ currency: v.a.currency, minor });
 
@@ -83,20 +84,20 @@ export function StockTiles({ v, r, shelf, stock }: { v: AnalyticsView; r: Runway
     </Tile>
   );
 
-  // 4. money in stock
-  const idle = shelf.atCost > 0 ? shelf.idleAtCost / shelf.atCost : 0;
+  // 4. money in stock, split by age on the webstore
+  const archive = age?.bands.find((x) => x.band === 'ARCHIVE');
   const shelfTile = (
     <Tile label="STOCK AT COST" sub={<>
-      {plural(shelf.units, 'UNIT')} · <span className="text-[var(--vhs-white)]">{fm(shelf.idleAtCost)}</span> NOT SOLD IN 90 DAYS
+      {plural(shelf.units, 'UNIT')}
+      {age && archive && age.atCost > 0 && <> · <span className="text-[var(--vhs-white)]">{Math.round((archive.atCost / age.atCost) * 100)}%</span> IN ARCHIVE (12 MO+ ON THE WEBSTORE)</>}
       {shelf.unitsNoCost > 0 && <> · {shelf.unitsNoCost} WITHOUT A COST</>}
     </>}>
       <Big>{fm(shelf.atCost)}</Big>
-      {shelf.atCost > 0 && (
-        <svg viewBox="0 0 260 22" width="100%" height="22" preserveAspectRatio="none" role="img"
-          aria-label={`${fm(shelf.atCost)} at cost; ${fm(shelf.idleAtCost)} of it in products with no sales in 90 days`}>
-          <rect x="0" y="7" width="260" height="8" rx="4" fill="var(--phase-1)" />
-          {idle > 0 && <rect x={260 * (1 - idle)} y="7" width={260 * idle} height="8" rx="4" fill="var(--phase-2)" />}
-        </svg>
+      {age && age.atCost > 0 && (
+        <span className="flex h-2 w-full overflow-hidden rounded-full" role="img"
+          aria-label={`At cost by age: ${age.bands.filter((x) => x.atCost > 0).map((x) => `${BAND_LABEL[x.band].toLowerCase()} ${Math.round((x.atCost / age.atCost) * 100)}%`).join(', ')}`}>
+          {age.bands.filter((x) => x.atCost > 0).map((x) => <span key={x.band} style={{ width: `${(x.atCost / age.atCost) * 100}%`, background: BAND_COLOR[x.band] }} />)}
+        </span>
       )}
     </Tile>
   );
