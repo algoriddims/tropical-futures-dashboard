@@ -7,7 +7,8 @@ import { useTerminal } from '@/terminal/useTerminal';
 import { formatMoney } from '@/analytics/money';
 import { addDays } from '@/analytics/period';
 import type { Ymd } from '@/analytics/period';
-import type { Runway, ShelfValue, SizeCurves } from '@/analytics/stock';
+import type { LocationValue, Runway, ShelfValue, SizeCurves } from '@/analytics/stock';
+import { BAND_COLOR, BAND_LABEL } from './bands';
 import { splitBySales } from '@/analytics/stock';
 import { suggestedLeadWeeks } from '@/game/production';
 import { InlineNumber } from '@/components/InlineEdit';
@@ -216,7 +217,9 @@ export function SizeCurveChart({ c }: { c: SizeCurves }) {
 /** Colour per product by age band; legend entries in band order. */
 export interface ShelfColors { of: (productId: string) => { color: string; label: string } | null; legend: { color: string; label: string }[] }
 
-export function ShelfChart({ v, currency, colors }: { v: ShelfValue; currency: string; colors?: ShelfColors }) {
+export function ShelfChart({ v, currency, colors, locations }: { v: ShelfValue; currency: string; colors?: ShelfColors; locations?: LocationValue[] }) {
+  const [view, setView] = useState<'product' | 'location'>('product');
+  if (view === 'location' && locations) return <LocationView locations={locations} currency={currency} onView={setView} />;
   const top = v.rows.slice(0, 8);
   const rest = v.rows.slice(8);
   const restCost = rest.reduce((n, r) => n + r.atCost, 0);
@@ -224,7 +227,7 @@ export function ShelfChart({ v, currency, colors }: { v: ShelfValue; currency: s
   const fm = (minor: number) => formatMoney({ currency, minor });
   const idleShare = v.atCost > 0 ? Math.round((v.idleAtCost / v.atCost) * 100) : 0;
   return (
-    <Card title="WHERE THE MONEY IN STOCK SITS" note={
+    <Card title="WHERE THE MONEY IN STOCK SITS" head={locations && <ViewToggle view="product" onView={setView} />} note={
       <>
         <span className="flex flex-wrap gap-x-4 gap-y-1">
           {colors
@@ -270,6 +273,66 @@ export function ShelfChart({ v, currency, colors }: { v: ShelfValue; currency: s
               </span>
             </li>
           )}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function ViewToggle({ view, onView }: { view: 'product' | 'location'; onView: (v: 'product' | 'location') => void }) {
+  return (
+    <span role="group" aria-label="Show by" className="flex gap-1">
+      {(['product', 'location'] as const).map((k) => (
+        <button key={k} onClick={() => onView(k)} aria-pressed={view === k}
+          className={`tap border px-1.5 font-display text-xs ${view === k ? 'border-[var(--phase-1)] text-[var(--vhs-white)]' : 'border-[var(--crt-line)] dim'}`}>
+          {k === 'product' ? 'BY PRODUCT' : 'BY LOCATION'}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/** The same money, by where it is: each Shopify location's stock at cost, split by age band. */
+function LocationView({ locations, currency, onView }: { locations: LocationValue[]; currency: string; onView: (v: 'product' | 'location') => void }) {
+  const fm = (minor: number) => formatMoney({ currency, minor });
+  const max = Math.max(...locations.map((l) => l.atCost), 1);
+  const total = locations.reduce((n, l) => n + l.atCost, 0);
+  const bands = [...new Set(locations.flatMap((l) => l.bands.map((b) => b.band)))];
+  return (
+    <Card title="WHERE THE MONEY IN STOCK SITS" head={<ViewToggle view="location" onView={onView} />} note={
+      <>
+        <span className="flex flex-wrap gap-x-4 gap-y-1">
+          {bands.map((b) => <span key={b} className="inline-flex items-center gap-1"><Swatch fill={BAND_COLOR[b]} />{BAND_LABEL[b]}</span>)}
+        </span>
+        <span className="block mt-1">
+          SELLABLE STOCK IN EACH SHOPIFY LOCATION, AT RECORDED UNIT COST, COLOURED BY HOW LONG THE DESIGN HAS BEEN ON THE WEBSTORE (THE SAME IN EVERY LOCATION).
+          STOCK SHOPIFY DOESN'T HOLD — STOCKIST SHELVES, GOODS STILL IN PRODUCTION OR IN TRANSIT — ISN'T INCLUDED. LOCATION NAMES ARE AS SET IN SHOPIFY.
+        </span>
+      </>
+    }>
+      {locations.length === 0 ? <p className="stat-sub">NO SELLABLE STOCK.</p> : (
+        <ul className="space-y-3 text-[0.8rem]" aria-label="Stock at cost by location">
+          {locations.map((l) => (
+            <li key={l.location}>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span className="font-display text-base">{l.location.toUpperCase()}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <strong className="text-[var(--vhs-white)]">{fm(l.atCost)}</strong>
+                  <span className="dim"> · {total > 0 ? `${Math.round((l.atCost / total) * 100)}% · ` : ''}{plural(l.units, 'UNIT')}{l.unitsNoCost ? ` (${l.unitsNoCost} NOT VALUED)` : ''}</span>
+                </span>
+              </div>
+              <span className="mt-1 flex h-4 overflow-hidden rounded-sm" style={{ width: `${Math.max(2, (l.atCost / max) * 100)}%` }} role="img"
+                aria-label={`${l.location}: ${l.bands.filter((b) => b.atCost > 0).map((b) => `${BAND_LABEL[b.band].toLowerCase()} ${fm(b.atCost)}`).join(', ')}`}>
+                {l.bands.filter((b) => b.atCost > 0).map((b) => (
+                  <span key={b.band} title={`${BAND_LABEL[b.band]}: ${fm(b.atCost)}, ${plural(b.units, 'unit')}`} style={{ width: `${(b.atCost / (l.atCost || 1)) * 100}%`, background: BAND_COLOR[b.band] }} />
+                ))}
+              </span>
+              <span className="stat-sub mt-1 block">
+                {l.bands.map((b) => `${BAND_LABEL[b.band].replace(' · SAMPLE SALE', '')} ${b.units}`).join(' · ')}
+                {l.top.length > 0 && <> — MOST $ HERE: {l.top.map((t) => `${t.title} (${t.atCost > 0 ? fm(t.atCost) : `${t.units} not valued`})`).join(', ')}</>}
+              </span>
+            </li>
+          ))}
         </ul>
       )}
     </Card>

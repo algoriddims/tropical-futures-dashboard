@@ -358,3 +358,52 @@ export function stockAge(s: AnalyticsSnapshot, timeless: readonly string[] = [],
     soonDays,
   };
 }
+
+// ── where the money in stock is: by Shopify location, split by age band ─────
+
+export interface LocationValue {
+  location: string;
+  units: number;
+  /** Sellable units × recorded unit cost (minor units). */
+  atCost: number;
+  unitsNoCost: number;
+  bands: { band: AgeBand; units: number; atCost: number }[];
+  /** Biggest products here by value at cost (then units). */
+  top: { title: string; units: number; atCost: number }[];
+}
+
+/**
+ * Sellable stock per Shopify location, valued at recorded unit cost and split
+ * by the product's age band (age is per design, the same in every location).
+ * Stock Shopify doesn't hold (stockist shelves, goods in transit) isn't here.
+ */
+export function stockByLocation(s: AnalyticsSnapshot, age: StockAge): LocationValue[] {
+  const bandOf = new Map(age.rows.map((r) => [r.productId, r.band]));
+  const by = new Map<string, { units: number; atCost: number; unitsNoCost: number; bands: Map<AgeBand, { units: number; atCost: number }>; products: Map<string, { title: string; units: number; atCost: number }> }>();
+  for (const v of s.variants) {
+    if (v.isBundle || !v.tracked) continue;
+    const band = bandOf.get(v.productId);
+    if (!band) continue;
+    for (const l of v.inventory) {
+      const n = Math.max(0, l.available);
+      if (n <= 0) continue;
+      const loc = by.get(l.locationName) ?? { units: 0, atCost: 0, unitsNoCost: 0, bands: new Map(), products: new Map() };
+      const cost = v.unitCost === null ? 0 : n * v.unitCost;
+      loc.units += n;
+      loc.atCost += cost;
+      if (v.unitCost === null) loc.unitsNoCost += n;
+      const b = loc.bands.get(band) ?? { units: 0, atCost: 0 };
+      b.units += n; b.atCost += cost;
+      loc.bands.set(band, b);
+      const p = loc.products.get(v.productId) ?? { title: v.productTitle, units: 0, atCost: 0 };
+      p.units += n; p.atCost += cost;
+      loc.products.set(v.productId, p);
+      by.set(l.locationName, loc);
+    }
+  }
+  return [...by.entries()].map(([location, x]) => ({
+    location, units: x.units, atCost: x.atCost, unitsNoCost: x.unitsNoCost,
+    bands: BAND_ORDER.filter((b) => x.bands.has(b)).map((band) => ({ band, ...x.bands.get(band)! })),
+    top: [...x.products.values()].sort((a, b) => b.atCost - a.atCost || b.units - a.units || a.title.localeCompare(b.title)).slice(0, 3),
+  })).sort((a, b) => b.atCost - a.atCost || b.units - a.units || a.location.localeCompare(b.location));
+}

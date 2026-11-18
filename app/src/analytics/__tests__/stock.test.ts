@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnalyticsSnapshot, VariantDailyRow, VariantRecord } from '../types';
 import { lastCompleteDays } from '../period';
 import { productPerformance, stockRisk } from '../metrics';
-import { ageBand, runway, shelfValue, sizeCurves, splitBySales, stockAge, stockSegments } from '../stock';
+import { ageBand, runway, shelfValue, sizeCurves, splitBySales, stockAge, stockByLocation, stockSegments } from '../stock';
 import { blankRun, suggestedLeadWeeks, unlinkedRunUnits } from '../../game/production';
 import type { ProductionRun } from '../../game/production';
 
@@ -197,5 +197,29 @@ describe('stock age', () => {
     expect(a.rows.find((r) => r.productId === 'sarong')).toMatchObject({ band: 'TIMELESS', nextBand: null, nextBandOn: null });
     expect(a.archiveSoon).toEqual([]);
     expect(a.bands.find((b) => b.band === 'TIMELESS')!.units).toBe(40);
+  });
+});
+
+describe('stock by location', () => {
+  it('values each location\'s stock at cost, split by the design\'s age band', () => {
+    const base = fixture();
+    const s: AnalyticsSnapshot = {
+      ...base,
+      variants: base.variants.map((v) => {
+        const pub = v.productId === 'cap' ? '2026-08-01T12:00:00Z' : '2025-01-02T00:00:00Z';
+        // the sarong is split: 30 in the warehouse, 10 at the studio
+        const inventory = v.productId === 'sarong' ? [loc(30), { ...loc(10), locationId: 'L2', locationName: 'Studio' }] : v.inventory;
+        return { ...v, productPublishedAt: pub, inventory };
+      }),
+    };
+    const byLoc = stockByLocation(s, stockAge(s)!);
+    expect(byLoc.map((l) => [l.location, l.units, l.atCost, l.unitsNoCost])).toEqual([
+      ['Shop', 51, 7000 + 13500 + 81000, 2],
+      ['Studio', 10, 27000, 0],
+    ]);
+    expect(byLoc[0].bands).toEqual([{ band: 'NEW', units: 10, atCost: 7000 }, { band: 'ARCHIVE', units: 41, atCost: 94500 }]);
+    expect(byLoc[0].top[0]).toEqual({ title: 'Sarong', units: 30, atCost: 81000 });
+    // every unit is in exactly one location
+    expect(byLoc.reduce((n, l) => n + l.units, 0)).toBe(stockAge(s)!.units);
   });
 });

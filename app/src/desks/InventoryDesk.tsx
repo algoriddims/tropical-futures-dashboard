@@ -4,7 +4,7 @@ import { ProductTable, SizeMatrix } from './analytics/Products';
 import { StockPlanPanel } from './analytics/StockPlanPanel';
 import { ChannelFilterControl } from './analytics/Performance';
 import { formatRange } from '@/analytics/period';
-import { runway, shelfValue, sizeCurves, stockAge, AGE_BANDS } from '@/analytics/stock';
+import { runway, shelfValue, sizeCurves, stockAge, stockByLocation, AGE_BANDS } from '@/analytics/stock';
 import type { Exception } from '@/analytics/metrics';
 import { AgeChart } from './stock/StockAge';
 import { BAND_COLOR, BAND_LABEL } from './stock/bands';
@@ -53,6 +53,7 @@ export default function InventoryDesk() {
   const shelf = useMemo(() => (v ? shelfValue(v.a) : null), [v]);
   const timeless = data?.timelessProducts;
   const age = useMemo(() => (v ? stockAge(v.a, timeless ?? []) : null), [v, timeless]);
+  const locations = useMemo(() => (v && age ? stockByLocation(v.a, age) : undefined), [v, age]);
   if (!v || !curves || !shelf) return <LegacyInventory note={an.kind === 'none' ? undefined : 'BUSINESS TIMEZONE NOT CONFIGURED — PERIOD SALES UNAVAILABLE.'} />;
   const stock: Exception[] = [...v.exceptions.filter((e) => e.drill.desk === 'i')];
   // designs reaching 12 months on the webstore within 30 days: the sample-sale decision comes up
@@ -97,7 +98,7 @@ export default function InventoryDesk() {
         <AgeChart age={age} currency={v.a.currency} />
         <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
           <SizeCurveChart c={curves} />
-          <ShelfChart v={shelf} currency={v.a.currency} colors={shelfColors} />
+          <ShelfChart v={shelf} currency={v.a.currency} colors={shelfColors} locations={locations} />
         </div>
       </section>
 

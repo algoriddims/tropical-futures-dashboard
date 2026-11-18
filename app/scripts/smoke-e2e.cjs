@@ -221,6 +221,9 @@ const bank = {
   check('stock by age shows shares of units, cost and sales', /UNITS\s+\d/.test((await ageCard.innerText()).toUpperCase()) && (await ageCard.innerText()).toUpperCase().includes('SALES, 90 DAYS'));
   await ageCard.locator('button:has-text("☆ TIMELESS")').first().click(); await page.waitForTimeout(150);
   check('a design can be marked Timeless', /TIMELESS\s+RE-RELEASED, DOESN'T AGE\s+1\s/.test((await ageCard.innerText()).toUpperCase()));
+  await page.click('button:has-text("BY LOCATION")'); await page.waitForTimeout(150);
+  t = (await page.locator('section[aria-label="WHERE THE MONEY IN STOCK SITS"]').innerText()).toUpperCase();
+  check('money in stock can be shown by location, split by age', /\$\d[\d,]*\s+·\s+100%\s+·\s+\d+ UNITS?/.test(t) && t.includes('STOCK SHOPIFY DOESN\'T HOLD'));
   await page.click('button:has-text("SIZE AVAILABILITY")');
   await page.waitForTimeout(150);
   t = await body();

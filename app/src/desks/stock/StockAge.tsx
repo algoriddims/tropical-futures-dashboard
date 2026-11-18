@@ -43,7 +43,7 @@ function StackBar({ label, total, parts, fmt }: { label: string; total: number; 
 
 export function AgeChart({ age, currency }: { age: StockAge | null; currency: string }) {
   const { data, updateData } = useTerminal();
-  if (!age) return <Card title="STOCK BY AGE"><p className="stat-sub">UNAVAILABLE — BUSINESS TIMEZONE NOT CONFIGURED.</p></Card>;
+  if (!age) return <Card title="STOCK BY AGE · ALL LOCATIONS"><p className="stat-sub">UNAVAILABLE — BUSINESS TIMEZONE NOT CONFIGURED.</p></Card>;
   const fm = (minor: number) => formatMoney({ currency, minor });
   const timeless = new Set(data?.timelessProducts ?? []);
   const toggle = (id: string) => updateData((d) => {
@@ -54,9 +54,9 @@ export function AgeChart({ age, currency }: { age: StockAge | null; currency: st
   const archive = age.bands.find((b) => b.band === 'ARCHIVE');
 
   return (
-    <Card title="STOCK BY AGE · TIME ON THE WEBSTORE" note={
+    <Card title="STOCK BY AGE · ALL LOCATIONS" note={
       <>
-        AGE COUNTS FROM THE DAY THE DESIGN WENT UP ON THE WEBSTORE (SHOPIFY PUBLISH DATE), TO THE STOCK READ ({day(age.asOf)}). A RESTOCK DOESN'T RESET IT; RE-PUBLISHING IN SHOPIFY DOES.
+        ALL SELLABLE STOCK IN EVERY SHOPIFY LOCATION. AGE IS PER DESIGN: IT COUNTS FROM THE DAY THE DESIGN WENT UP ON THE WEBSTORE (SHOPIFY PUBLISH DATE) TO THE STOCK READ ({day(age.asOf)}), WHEREVER THE UNITS ARE. A RESTOCK DOESN'T RESET IT; RE-PUBLISHING IN SHOPIFY DOES.
         {' '}★ MARKS A DESIGN TIMELESS: IT NEVER AGES INTO ARCHIVE. VALUES ARE AT RECORDED UNIT COST; UNITS WITHOUT A COST AREN'T VALUED.
       </>
     }>
